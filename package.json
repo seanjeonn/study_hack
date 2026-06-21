@@ -1,0 +1,22 @@
+{
+  "name": "study_hack",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.26.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @study-hack/shared build && pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:web": "pnpm --filter @study-hack/web dev",
+    "dev:api": "pnpm --filter @study-hack/shared build && pnpm --filter @study-hack/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm --filter @study-hack/shared build && pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \".\"",
+    "format:check": "prettier --check \".\""
+  },
+  "devDependencies": {
+    "prettier": "^3.8.4"
+  }
+}
