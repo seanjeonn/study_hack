@@ -21,3 +21,6 @@ npm-debug.log*
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# local-only tracking docs (roadmap / planning)
+docs/ROADMAP.md
