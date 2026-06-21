@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Native deps whose install scripts we intentionally skip (set by create-next-app).
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
