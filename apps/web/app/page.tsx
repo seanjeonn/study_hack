@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { HealthResponseSchema, type HealthResponse } from "@study-hack/shared";
 
 const API_URL = process.env.API_URL ?? "http://localhost:4000";
@@ -40,6 +41,9 @@ export default async function Home() {
           </p>
         )}
       </section>
+      <Link href="/pdf" className="text-sm font-medium text-[#f54e00] hover:underline">
+        Open the PDF reader →
+      </Link>
     </main>
   );
 }
