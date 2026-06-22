@@ -6,15 +6,20 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@study-hack/shared": "workspace:*",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "multer": "^2.2.0",
-    "pdf-to-img": "^6.2.0"
+    "pdf-to-img": "^6.2.0",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^9",
@@ -22,6 +27,8 @@
     "@types/express": "^5",
     "@types/multer": "^2.1.0",
     "@types/node": "^22",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "tsx": "^4.22.4",
     "typescript": "^5.9.0",

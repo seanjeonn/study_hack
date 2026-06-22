@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { HealthResponseSchema, PdfUploadResponseSchema } from "@study-hack/shared";
-import { addPdf, getEntry, renderPage } from "./pdfStore.js";
+import { addPdf, getPdf, renderPage } from "./pdfStore.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -59,6 +59,9 @@ app.post("/pdf", (req, res) => {
       const payload = PdfUploadResponseSchema.parse(result);
       res.status(201).json(payload);
     } catch {
+      // Note: this also catches DB insert failures, which would be reported as
+      // a parse error. Acceptable for the MVP — revisit if DB errors need to be
+      // distinguished from malformed PDFs.
       res.status(400).json({ error: "failed to parse the uploaded PDF" });
     }
   });
@@ -66,7 +69,7 @@ app.post("/pdf", (req, res) => {
 
 // Serve a single page as a PNG image (n is 1-indexed).
 app.get("/pdf/:id/pages/:n", async (req, res) => {
-  const entry = getEntry(req.params.id);
+  const entry = await getPdf(req.params.id);
   if (!entry) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -76,7 +79,7 @@ app.get("/pdf/:id/pages/:n", async (req, res) => {
     res.status(400).json({ error: "page out of range" });
     return;
   }
-  const image = await renderPage(entry, n);
+  const image = await renderPage(req.params.id, n);
   res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.end(image);
