@@ -77,8 +77,13 @@ export const ExtractionReportSchema = z.object({
   hasTextRatio: z.number().min(0).max(1),
   totalChars: z.number().int().nonnegative(),
   avgCharsPerTextPage: z.number().nonnegative(),
-  replacementChars: z.number().int().nonnegative(),
-  replacementRatio: z.number().min(0).max(1),
+  // "Suspicious" chars are corruption markers (controls, broken-CID symbols,
+  // replacement/Specials). suspectPages = pages whose suspicious ratio is high
+  // enough to look genuinely garbled (localized garble that a global ratio
+  // would dilute away).
+  suspiciousChars: z.number().int().nonnegative(),
+  suspiciousRatio: z.number().min(0).max(1),
+  suspectPages: z.number().int().nonnegative(),
   recommendation: ExtractionRecommendationSchema,
 });
 

@@ -266,7 +266,8 @@ function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
           {report.pageCount}p)
         </span>
         <span>평균 {Math.round(report.avgCharsPerTextPage)}자/페이지</span>
-        <span>깨짐 {Math.round(report.replacementRatio * 1000) / 10}%</span>
+        <span>깨짐 {Math.round(report.suspiciousRatio * 1000) / 10}%</span>
+        {report.suspectPages > 0 ? <span>의심 페이지 {report.suspectPages}개</span> : null}
       </div>
       <span
         className={`w-fit rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.88px] ${tone}`}

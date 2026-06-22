@@ -1,14 +1,16 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { pdf as pdfRender } from "pdf-to-img";
 import type { ExtractionRecommendation, ExtractionReport } from "@study-hack/shared";
 import { db } from "./db/client.js";
 import { pdf, pdfPage } from "./db/schema.js";
-import { extractPdfText } from "./textExtract.js";
+import { countSuspiciousChars, extractPdfText } from "./textExtract.js";
 
-// Thresholds for the extraction-quality recommendation. Tune against real
-// course PDFs — they decide when to fall back to OCR or an LLM extraction pass.
+// Thresholds for the extraction-quality recommendation. Tuned against real
+// course PDFs (clean English/math decks vs. one with garbled CID text) — they
+// decide when to fall back to OCR or an LLM extraction pass.
 const MIN_HAS_TEXT_RATIO = 0.5; // below this, the PDF is likely scanned/image-only
-const MAX_REPLACEMENT_RATIO = 0.1; // above this, text exists but is garbled
+const MAX_SUSPICIOUS_RATIO = 0.02; // overall corruption-char ratio that looks bad
+const PAGE_SUSPICIOUS_RATIO = 0.01; // a page above this (of non-whitespace) looks garbled
 
 type PdfDocument = Awaited<ReturnType<typeof pdfRender>>;
 
@@ -112,10 +114,11 @@ export async function getPageText(
 }
 
 /**
- * Aggregate extraction-quality metrics for a PDF from its `pdf_page` rows.
- * Coverage and garble (U+FFFD ratio) are computed in SQL; the recommendation is
- * a threshold-based gauge of whether OCR/LLM fallback is worth considering.
- * Returns undefined if the PDF does not exist.
+ * Aggregate extraction-quality metrics for a PDF from its `pdf_page` rows. Page
+ * texts are scanned in app code (not SQL) so per-page suspicious ratios can be
+ * computed — localized garble that a document-wide ratio would dilute away. The
+ * recommendation is a threshold-based gauge of whether OCR/LLM fallback is worth
+ * considering. Returns undefined if the PDF does not exist.
  */
 export async function getExtractionReport(id: string): Promise<ExtractionReport | undefined> {
   const [meta] = await db
@@ -125,29 +128,36 @@ export async function getExtractionReport(id: string): Promise<ExtractionReport 
     .limit(1);
   if (!meta) return undefined;
 
-  const [agg] = await db
-    .select({
-      textPages: sql<number>`count(*) filter (where ${pdfPage.hasText})`,
-      totalChars: sql<number>`coalesce(sum(char_length(${pdfPage.extractedText})), 0)`,
-      replacementChars: sql<number>`coalesce(sum(char_length(${pdfPage.extractedText}) - char_length(replace(${pdfPage.extractedText}, ${"�"}, ''))), 0)`,
-    })
+  const rows = await db
+    .select({ text: pdfPage.extractedText, hasText: pdfPage.hasText })
     .from(pdfPage)
     .where(eq(pdfPage.pdfId, id));
 
-  // Postgres aggregates can arrive as strings (bigint/numeric) — coerce.
   const pageCount = meta.pageCount;
-  const textPages = Number(agg?.textPages ?? 0);
-  const totalChars = Number(agg?.totalChars ?? 0);
-  const replacementChars = Number(agg?.replacementChars ?? 0);
+  let textPages = 0;
+  let totalChars = 0;
+  let suspiciousChars = 0;
+  let suspectPages = 0;
+  for (const row of rows) {
+    if (row.hasText) textPages++;
+    totalChars += row.text.length;
+    const susp = countSuspiciousChars(row.text);
+    suspiciousChars += susp;
+    const nonWhitespace = row.text.replace(/\s/g, "").length;
+    if (nonWhitespace > 0 && susp / nonWhitespace > PAGE_SUSPICIOUS_RATIO) suspectPages++;
+  }
+
   const emptyPages = Math.max(pageCount - textPages, 0);
   const hasTextRatio = pageCount > 0 ? textPages / pageCount : 0;
-  const replacementRatio = totalChars > 0 ? replacementChars / totalChars : 0;
+  const suspiciousRatio = totalChars > 0 ? suspiciousChars / totalChars : 0;
   const avgCharsPerTextPage = textPages > 0 ? totalChars / textPages : 0;
 
   let recommendation: ExtractionRecommendation = "ok";
-  if (replacementRatio > MAX_REPLACEMENT_RATIO) {
+  if (suspectPages > 0 || suspiciousRatio > MAX_SUSPICIOUS_RATIO) {
+    // Text exists but is garbled on at least one page — OCR or an LLM pass.
     recommendation = "consider_llm_or_ocr";
   } else if (hasTextRatio < MIN_HAS_TEXT_RATIO) {
+    // Too few pages have text — likely a scanned/image PDF.
     recommendation = "consider_ocr";
   }
 
@@ -158,8 +168,9 @@ export async function getExtractionReport(id: string): Promise<ExtractionReport 
     hasTextRatio,
     totalChars,
     avgCharsPerTextPage,
-    replacementChars,
-    replacementRatio,
+    suspiciousChars,
+    suspiciousRatio,
+    suspectPages,
     recommendation,
   };
 }
