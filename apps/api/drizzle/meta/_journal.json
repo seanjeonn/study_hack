@@ -15,6 +15,13 @@
       "when": 1782129853249,
       "tag": "0001_enable_pgvector",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782138356762,
+      "tag": "0002_glamorous_dagger",
+      "breakpoints": true
     }
   ]
 }
