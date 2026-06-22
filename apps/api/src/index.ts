@@ -2,8 +2,21 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import { HealthResponseSchema, PdfUploadResponseSchema } from "@study-hack/shared";
-import { addPdf, getPdf, renderPage } from "./pdfStore.js";
+import {
+  ExtractionReportSchema,
+  HealthResponseSchema,
+  PageTextResponseSchema,
+  PdfStatusResponseSchema,
+  PdfUploadResponseSchema,
+} from "@study-hack/shared";
+import {
+  addPdf,
+  getExtractionReport,
+  getPageText,
+  getPdf,
+  getPdfStatus,
+  renderPage,
+} from "./pdfStore.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -65,6 +78,44 @@ app.post("/pdf", (req, res) => {
       res.status(400).json({ error: "failed to parse the uploaded PDF" });
     }
   });
+});
+
+// PDF metadata + processing status, for the web client to poll extraction progress.
+app.get("/pdf/:id", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const payload = PdfStatusResponseSchema.parse(status);
+  res.json(payload);
+});
+
+// Extraction-quality report aggregated from the page texts.
+app.get("/pdf/:id/extraction-report", async (req, res) => {
+  const report = await getExtractionReport(req.params.id);
+  if (!report) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const payload = ExtractionReportSchema.parse(report);
+  res.json(payload);
+});
+
+// Extracted text for a single page (n is 1-indexed). 404 until extraction runs.
+app.get("/pdf/:id/pages/:n/text", async (req, res) => {
+  const n = Number(req.params.n);
+  if (!Number.isInteger(n) || n < 1) {
+    res.status(400).json({ error: "page out of range" });
+    return;
+  }
+  const pageText = await getPageText(req.params.id, n);
+  if (!pageText) {
+    res.status(404).json({ error: "page text not found" });
+    return;
+  }
+  const payload = PageTextResponseSchema.parse(pageText);
+  res.json(payload);
 });
 
 // Serve a single page as a PNG image (n is 1-indexed).

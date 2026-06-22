@@ -1,7 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pdf as pdfRender } from "pdf-to-img";
+import type { ExtractionRecommendation, ExtractionReport } from "@study-hack/shared";
 import { db } from "./db/client.js";
-import { pdf } from "./db/schema.js";
+import { pdf, pdfPage } from "./db/schema.js";
+import { extractPdfText } from "./textExtract.js";
+
+// Thresholds for the extraction-quality recommendation. Tune against real
+// course PDFs — they decide when to fall back to OCR or an LLM extraction pass.
+const MIN_HAS_TEXT_RATIO = 0.5; // below this, the PDF is likely scanned/image-only
+const MAX_REPLACEMENT_RATIO = 0.1; // above this, text exists but is garbled
 
 type PdfDocument = Awaited<ReturnType<typeof pdfRender>>;
 
@@ -31,7 +38,130 @@ export async function addPdf(
     .values({ filename, pageCount, bytes: buffer })
     .returning({ id: pdf.id });
   docCache.set(row.id, { document, pages: new Map() });
+  // Kick off text extraction in the background — the upload response must not
+  // wait on it. Status transitions (processing -> text_ready/failed) and errors
+  // are handled inside runTextExtraction.
+  void runTextExtraction(row.id, buffer);
   return { id: row.id, pageCount, filename };
+}
+
+/**
+ * Background job: extract per-page text, persist it to `pdf_page`, and advance
+ * `pdf.status`. Fire-and-forget — failures land in `status='failed'` + a log.
+ */
+async function runTextExtraction(id: string, buffer: Buffer): Promise<void> {
+  try {
+    await db.update(pdf).set({ status: "processing" }).where(eq(pdf.id, id));
+    const pages = await extractPdfText(buffer);
+    if (pages.length > 0) {
+      await db.insert(pdfPage).values(
+        pages.map((p) => ({
+          pdfId: id,
+          pageNumber: p.pageNumber,
+          extractedText: p.text,
+          hasText: p.hasText,
+        })),
+      );
+    }
+    await db.update(pdf).set({ status: "text_ready" }).where(eq(pdf.id, id));
+    // Log the quality report so extraction performance accumulates during dev.
+    const report = await getExtractionReport(id);
+    console.info(`[extract] pdf=${id} report=${JSON.stringify(report)}`);
+  } catch (err) {
+    console.error(`[extract] pdf=${id} failed:`, err);
+    await db
+      .update(pdf)
+      .set({ status: "failed" })
+      .where(eq(pdf.id, id))
+      .catch(() => {});
+  }
+}
+
+/** PDF metadata + processing status, for the web client's progress polling. */
+export async function getPdfStatus(
+  id: string,
+): Promise<{ id: string; filename: string; pageCount: number; status: string } | undefined> {
+  const [row] = await db
+    .select({
+      id: pdf.id,
+      filename: pdf.filename,
+      pageCount: pdf.pageCount,
+      status: pdf.status,
+    })
+    .from(pdf)
+    .where(eq(pdf.id, id))
+    .limit(1);
+  return row;
+}
+
+/** Extracted text for a single 1-indexed page, if it has been extracted yet. */
+export async function getPageText(
+  id: string,
+  pageNumber: number,
+): Promise<{ pageNumber: number; text: string; hasText: boolean } | undefined> {
+  const [row] = await db
+    .select({
+      pageNumber: pdfPage.pageNumber,
+      text: pdfPage.extractedText,
+      hasText: pdfPage.hasText,
+    })
+    .from(pdfPage)
+    .where(and(eq(pdfPage.pdfId, id), eq(pdfPage.pageNumber, pageNumber)))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Aggregate extraction-quality metrics for a PDF from its `pdf_page` rows.
+ * Coverage and garble (U+FFFD ratio) are computed in SQL; the recommendation is
+ * a threshold-based gauge of whether OCR/LLM fallback is worth considering.
+ * Returns undefined if the PDF does not exist.
+ */
+export async function getExtractionReport(id: string): Promise<ExtractionReport | undefined> {
+  const [meta] = await db
+    .select({ pageCount: pdf.pageCount })
+    .from(pdf)
+    .where(eq(pdf.id, id))
+    .limit(1);
+  if (!meta) return undefined;
+
+  const [agg] = await db
+    .select({
+      textPages: sql<number>`count(*) filter (where ${pdfPage.hasText})`,
+      totalChars: sql<number>`coalesce(sum(char_length(${pdfPage.extractedText})), 0)`,
+      replacementChars: sql<number>`coalesce(sum(char_length(${pdfPage.extractedText}) - char_length(replace(${pdfPage.extractedText}, ${"�"}, ''))), 0)`,
+    })
+    .from(pdfPage)
+    .where(eq(pdfPage.pdfId, id));
+
+  // Postgres aggregates can arrive as strings (bigint/numeric) — coerce.
+  const pageCount = meta.pageCount;
+  const textPages = Number(agg?.textPages ?? 0);
+  const totalChars = Number(agg?.totalChars ?? 0);
+  const replacementChars = Number(agg?.replacementChars ?? 0);
+  const emptyPages = Math.max(pageCount - textPages, 0);
+  const hasTextRatio = pageCount > 0 ? textPages / pageCount : 0;
+  const replacementRatio = totalChars > 0 ? replacementChars / totalChars : 0;
+  const avgCharsPerTextPage = textPages > 0 ? totalChars / textPages : 0;
+
+  let recommendation: ExtractionRecommendation = "ok";
+  if (replacementRatio > MAX_REPLACEMENT_RATIO) {
+    recommendation = "consider_llm_or_ocr";
+  } else if (hasTextRatio < MIN_HAS_TEXT_RATIO) {
+    recommendation = "consider_ocr";
+  }
+
+  return {
+    pageCount,
+    textPages,
+    emptyPages,
+    hasTextRatio,
+    totalChars,
+    avgCharsPerTextPage,
+    replacementChars,
+    replacementRatio,
+    recommendation,
+  };
 }
 
 /**

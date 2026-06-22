@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { customType, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  customType,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /**
  * `bytea` is not a built-in column type in this drizzle-orm version, so we
@@ -30,3 +39,22 @@ export const pdf = pgTable("pdf", {
     .notNull()
     .default(sql`now()`),
 });
+
+/**
+ * Per-page extracted text. Populated by the background extraction job after
+ * upload. `has_text` is false when a page has almost no extractable text
+ * (scan/image slide = OCR candidate). One row per (pdf, page).
+ */
+export const pdfPage = pgTable(
+  "pdf_page",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pdfId: uuid("pdf_id")
+      .notNull()
+      .references(() => pdf.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    extractedText: text("extracted_text").notNull(),
+    hasText: boolean("has_text").notNull(),
+  },
+  (table) => [unique().on(table.pdfId, table.pageNumber)],
+);
