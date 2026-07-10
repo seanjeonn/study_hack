@@ -2,10 +2,12 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
+  AskResponseSchema,
   ExtractionReportSchema,
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
+  type AskResponse,
   type ExtractionReport,
   type PageTextResponse,
   type PdfStatus,
@@ -36,6 +38,10 @@ export default function PdfStudio() {
   const [uploading, setUploading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [askAnswer, setAskAnswer] = useState<AskResponse | null>(null);
 
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
@@ -126,6 +132,30 @@ export default function PdfStudio() {
     }
   }
 
+  async function submitAsk() {
+    if (!doc || !askQuestion.trim() || askLoading) return;
+    setAskLoading(true);
+    setAskError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: askQuestion.trim() }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `ask failed (${res.status})`);
+      }
+      // Validate the inbound payload at the boundary before trusting it.
+      const parsed = AskResponseSchema.parse(await res.json());
+      setAskAnswer(parsed);
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : "ask failed");
+    } finally {
+      setAskLoading(false);
+    }
+  }
+
   function go(target: number) {
     if (!doc) return;
     const clamped = Math.min(Math.max(target, 1), doc.pageCount);
@@ -142,6 +172,10 @@ export default function PdfStudio() {
     setPageText(null);
     setPage(1);
     setError(null);
+    setAskQuestion("");
+    setAskLoading(false);
+    setAskError(null);
+    setAskAnswer(null);
   }
 
   if (!doc) {
@@ -182,6 +216,57 @@ export default function PdfStudio() {
       </div>
 
       {report ? <ExtractionReportPanel report={report} /> : null}
+
+      {status === "text_ready" ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] bg-white p-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={askQuestion}
+              onChange={(e) => setAskQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void submitAsk();
+              }}
+              disabled={askLoading}
+              placeholder="Ask a question about this PDF…"
+              className="flex-1 rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={() => void submitAsk()}
+              disabled={askLoading || !askQuestion.trim()}
+              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {askLoading ? "Thinking…" : "Ask"}
+            </button>
+          </div>
+          {askLoading ? (
+            <p className="text-sm text-[#807d72]">Thinking…</p>
+          ) : askError ? (
+            <p className="text-sm text-[#cf2d56]">{askError}</p>
+          ) : askAnswer ? (
+            <div className="flex flex-col gap-2">
+              <p className="whitespace-pre-wrap text-sm text-[#26251e]">{askAnswer.answer}</p>
+              {askAnswer.citedPages.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {askAnswer.citedPages.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => go(n)}
+                      className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                    >
+                      p.{n}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-[#807d72]">No supporting pages cited.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="relative flex min-h-[60vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4">
