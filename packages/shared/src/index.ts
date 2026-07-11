@@ -112,3 +112,48 @@ export const AskResponseSchema = z.object({
 });
 
 export type AskResponse = z.infer<typeof AskResponseSchema>;
+
+/** Request body for `POST /pdf/:id/quiz` — how many MCQ questions to generate. */
+export const QuizGenerateRequestSchema = z.object({
+  count: z.number().int().min(1).max(10).default(5),
+});
+
+export type QuizGenerateRequest = z.infer<typeof QuizGenerateRequestSchema>;
+
+/**
+ * A single generated multiple-choice question. `sourcePageIds` are the
+ * 1-indexed pages the question/answer is grounded in (the citation-accuracy
+ * signal, same idea as `AskResponse.citedPages`). v1 exposes `answerIndex` +
+ * `explanation` to the client because grading happens client-side this slice.
+ */
+export const QuizQuestionSchema = z.object({
+  id: z.string(),
+  type: z.literal("mcq"),
+  question: z.string(),
+  choices: z.array(z.string()).length(4),
+  answerIndex: z.number().int().min(0).max(3),
+  explanation: z.string(),
+  sourcePageIds: z.array(z.number().int().positive()),
+  difficulty: z.string(),
+});
+
+export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
+
+/** Response for `POST /pdf/:id/quiz`. `usage` feeds the running cost measurement. */
+export const QuizGenerateResponseSchema = z.object({
+  questions: z.array(QuizQuestionSchema),
+  model: z.string(),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+  }),
+});
+
+export type QuizGenerateResponse = z.infer<typeof QuizGenerateResponseSchema>;
+
+/** Response for `GET /pdf/:id/quiz` — the previously generated questions for a PDF. */
+export const QuizListResponseSchema = z.object({
+  questions: z.array(QuizQuestionSchema),
+});
+
+export type QuizListResponse = z.infer<typeof QuizListResponseSchema>;

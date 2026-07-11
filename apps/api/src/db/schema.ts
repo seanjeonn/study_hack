@@ -3,6 +3,7 @@ import {
   boolean,
   customType,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -58,3 +59,29 @@ export const pdfPage = pgTable(
   },
   (table) => [unique().on(table.pdfId, table.pageNumber)],
 );
+
+/**
+ * Generated multiple-choice quiz questions for a PDF. `type` is always "mcq"
+ * in v1 (the column exists for future question types); `difficulty` is fixed
+ * "medium" for now (also reserved for later). `sourcePageIds` are the 1-indexed
+ * pages the question/answer is grounded in — the citation-accuracy signal,
+ * same idea as `pdfPage` citations in `askPdf`. `user_id` is a nullable hedge
+ * for the eventual multi-user slice, like `pdf.userId`.
+ */
+export const quizQuestion = pgTable("quiz_question", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pdfId: uuid("pdf_id")
+    .notNull()
+    .references(() => pdf.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  question: text("question").notNull(),
+  choices: jsonb("choices").$type<string[]>().notNull(),
+  answerIndex: integer("answer_index").notNull(),
+  explanation: text("explanation").notNull(),
+  sourcePageIds: integer("source_page_ids").array().notNull(),
+  difficulty: text("difficulty").notNull(),
+  userId: uuid("user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
