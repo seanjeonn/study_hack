@@ -59,6 +59,7 @@ export default function PdfStudio() {
   const [quizScore, setQuizScore] = useState<{ correctCount: number; total: number } | null>(null);
   const [quizSubmitting, setQuizSubmitting] = useState(false);
   const [retryWrongOnly, setRetryWrongOnly] = useState(false);
+  const [requizLoading, setRequizLoading] = useState(false);
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
@@ -390,6 +391,30 @@ export default function PdfStudio() {
     });
   }
 
+  async function generateRequiz() {
+    if (!doc || requizLoading) return;
+    setRequizLoading(true);
+    setQuizError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/requiz`, { method: "POST" });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `re-quiz generation failed (${res.status})`);
+      }
+      // Validate the inbound payload at the boundary before trusting it.
+      const parsed = QuizGenerateResponseSchema.parse(await res.json());
+      setQuizQuestions(parsed.questions);
+      setQuizAnswers({});
+      setQuizResults(null);
+      setQuizScore(null);
+      setRetryWrongOnly(false);
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : "re-quiz generation failed");
+    } finally {
+      setRequizLoading(false);
+    }
+  }
+
   function go(target: number) {
     if (!doc) return;
     const clamped = Math.min(Math.max(target, 1), doc.pageCount);
@@ -418,6 +443,7 @@ export default function PdfStudio() {
     setQuizScore(null);
     setQuizSubmitting(false);
     setRetryWrongOnly(false);
+    setRequizLoading(false);
     setMemoDraft("");
     setMemoSaving(false);
     setStudyLog([]);
@@ -566,6 +592,16 @@ export default function PdfStudio() {
                     className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
                   >
                     Retry wrong answers
+                  </button>
+                ) : null}
+                {quizScore && Object.values(quizResults ?? {}).some((r) => !r.isCorrect) ? (
+                  <button
+                    type="button"
+                    onClick={() => void generateRequiz()}
+                    disabled={requizLoading}
+                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {requizLoading ? "Generating review…" : "Retry weak areas"}
                   </button>
                 ) : null}
               </div>
