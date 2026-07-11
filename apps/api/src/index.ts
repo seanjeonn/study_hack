@@ -3,12 +3,15 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import {
+  AskRequestSchema,
+  AskResponseSchema,
   ExtractionReportSchema,
   HealthResponseSchema,
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
 } from "@study-hack/shared";
+import { askPdf, AskError } from "./ask.js";
 import {
   addPdf,
   getExtractionReport,
@@ -100,6 +103,34 @@ app.get("/pdf/:id/extraction-report", async (req, res) => {
   }
   const payload = ExtractionReportSchema.parse(report);
   res.json(payload);
+});
+
+// Full-context Q&A over the PDF's extracted text (quality probe — small PDFs only).
+app.post("/pdf/:id/ask", async (req, res) => {
+  let body;
+  try {
+    body = AskRequestSchema.parse(req.body);
+  } catch {
+    res.status(400).json({ error: "invalid request body" });
+    return;
+  }
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  try {
+    const result = await askPdf(req.params.id, body.question);
+    // Validate the outbound payload at the boundary before returning it.
+    res.json(AskResponseSchema.parse(result));
+  } catch (err) {
+    if (err instanceof AskError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    console.error(`[ask] pdf=${req.params.id} failed:`, err);
+    res.status(502).json({ error: "ask failed" });
+  }
 });
 
 // Extracted text for a single page (n is 1-indexed). 404 until extraction runs.

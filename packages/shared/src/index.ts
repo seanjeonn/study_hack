@@ -88,3 +88,27 @@ export const ExtractionReportSchema = z.object({
 });
 
 export type ExtractionReport = z.infer<typeof ExtractionReportSchema>;
+
+/** Request body for `POST /pdf/:id/ask` — a question about the PDF's content. */
+export const AskRequestSchema = z.object({
+  question: z.string().min(1).max(2000),
+});
+
+export type AskRequest = z.infer<typeof AskRequestSchema>;
+
+/**
+ * Response for `POST /pdf/:id/ask`. `citedPages` are the 1-indexed pages the
+ * answer is grounded in — the quality probe's core signal (citation accuracy
+ * is measured against them). `usage` feeds the running cost measurement.
+ */
+export const AskResponseSchema = z.object({
+  answer: z.string(),
+  citedPages: z.array(z.number().int().positive()),
+  model: z.string(),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+  }),
+});
+
+export type AskResponse = z.infer<typeof AskResponseSchema>;
