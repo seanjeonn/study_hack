@@ -32,7 +32,7 @@ import {
   getPdfStatus,
   renderPage,
 } from "./pdfStore.js";
-import { generateQuiz, gradeSubmission, listAttempts, listQuiz } from "./quiz.js";
+import { generateQuiz, generateRequiz, gradeSubmission, listAttempts, listQuiz } from "./quiz.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -216,6 +216,32 @@ app.post("/pdf/:id/quiz/submit", async (req, res) => {
     }
     console.error(`[grade] pdf=${req.params.id} failed:`, err);
     res.status(502).json({ error: "grading failed" });
+  }
+});
+
+// Weakness-based re-quiz: generate new questions covering the same concepts
+// as the learner's most recently missed questions, closing the study loop.
+app.post("/pdf/:id/quiz/requiz", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  if (status.status !== "text_ready") {
+    res.status(409).json({ error: "page text is not ready for this PDF" });
+    return;
+  }
+  try {
+    const result = await generateRequiz(req.params.id);
+    // Validate the outbound payload at the boundary before returning it.
+    res.json(QuizGenerateResponseSchema.parse(result));
+  } catch (err) {
+    if (err instanceof LlmError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    console.error(`[requiz] pdf=${req.params.id} failed:`, err);
+    res.status(502).json({ error: "re-quiz failed" });
   }
 });
 

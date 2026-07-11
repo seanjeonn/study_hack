@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import OpenAI from "openai";
 import { db } from "./db/client.js";
 import { pdfPage } from "./db/schema.js";
@@ -32,6 +32,11 @@ export function getClient(): OpenAI {
   return client;
 }
 
+/** Build the page-tagged context string (`[p.N]\n<text>`, pages joined by a blank line). */
+function toPageContext(rows: { pageNumber: number; text: string }[]): string {
+  return rows.map((r) => `[p.${r.pageNumber}]\n${r.text}`).join("\n\n");
+}
+
 /**
  * Load a PDF's extracted page text and build the page-tagged context string
  * (`[p.N]\n<text>`, pages joined by a blank line) shared by every full-context
@@ -51,9 +56,41 @@ export async function buildPdfContext(
     throw new LlmError(409, "page text is not ready for this PDF");
   }
 
-  const context = rows.map((r) => `[p.${r.pageNumber}]\n${r.text}`).join("\n\n");
+  const context = toPageContext(rows);
   if (context.length > MAX_CONTEXT_CHARS) {
     throw new LlmError(413, "PDF too large for full-context Q&A");
+  }
+
+  const validPageNumbers = new Set(rows.map((r) => r.pageNumber));
+  return { context, validPageNumbers };
+}
+
+/**
+ * Same as `buildPdfContext`, but scoped to a specific subset of pages — used
+ * by the weakness-based re-quiz, which only needs the pages a learner's
+ * missed questions were grounded in. Throws LlmError 409 if none of the
+ * requested pages have extracted text, or 413 if the context exceeds
+ * MAX_CONTEXT_CHARS.
+ */
+export async function buildPagesContext(
+  pdfId: string,
+  pageNumbers: number[],
+): Promise<{ context: string; validPageNumbers: Set<number> }> {
+  const uniquePageNumbers = [...new Set(pageNumbers)].sort((a, b) => a - b);
+
+  const rows = await db
+    .select({ pageNumber: pdfPage.pageNumber, text: pdfPage.extractedText })
+    .from(pdfPage)
+    .where(and(eq(pdfPage.pdfId, pdfId), inArray(pdfPage.pageNumber, uniquePageNumbers)))
+    .orderBy(asc(pdfPage.pageNumber));
+
+  if (rows.length === 0) {
+    throw new LlmError(409, "no source pages available");
+  }
+
+  const context = toPageContext(rows);
+  if (context.length > MAX_CONTEXT_CHARS) {
+    throw new LlmError(413, "selected pages too large");
   }
 
   const validPageNumbers = new Set(rows.map((r) => r.pageNumber));
