@@ -85,3 +85,23 @@ export const quizQuestion = pgTable("quiz_question", {
     .notNull()
     .default(sql`now()`),
 });
+
+/**
+ * A graded attempt at a single quiz question (slice 5 — server-side
+ * grading). One row per submission; a question can be attempted more than
+ * once (e.g. "retry wrong answers"), so the latest row per `quizQuestionId`
+ * is the current graded state. `user_id` is a nullable hedge for the eventual
+ * multi-user slice, like `quizQuestion.userId`.
+ */
+export const quizAttempt = pgTable("quiz_attempt", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  quizQuestionId: uuid("quiz_question_id")
+    .notNull()
+    .references(() => quizQuestion.id, { onDelete: "cascade" }),
+  userAnswer: integer("user_answer").notNull(),
+  isCorrect: boolean("is_correct").notNull(),
+  userId: uuid("user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});

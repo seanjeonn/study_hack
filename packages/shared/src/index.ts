@@ -121,18 +121,18 @@ export const QuizGenerateRequestSchema = z.object({
 export type QuizGenerateRequest = z.infer<typeof QuizGenerateRequestSchema>;
 
 /**
- * A single generated multiple-choice question. `sourcePageIds` are the
- * 1-indexed pages the question/answer is grounded in (the citation-accuracy
- * signal, same idea as `AskResponse.citedPages`). v1 exposes `answerIndex` +
- * `explanation` to the client because grading happens client-side this slice.
+ * A single generated multiple-choice question, as exposed to the quiz-taking
+ * client. `sourcePageIds` are the 1-indexed pages the question/answer is
+ * grounded in (the citation-accuracy signal, same idea as
+ * `AskResponse.citedPages`). Grading is server-side (slice 5): `answerIndex`
+ * and `explanation` are withheld here and only revealed per-question via
+ * `POST /pdf/:id/quiz/submit`.
  */
 export const QuizQuestionSchema = z.object({
   id: z.string(),
   type: z.literal("mcq"),
   question: z.string(),
   choices: z.array(z.string()).length(4),
-  answerIndex: z.number().int().min(0).max(3),
-  explanation: z.string(),
   sourcePageIds: z.array(z.number().int().positive()),
   difficulty: z.string(),
 });
@@ -157,3 +157,59 @@ export const QuizListResponseSchema = z.object({
 });
 
 export type QuizListResponse = z.infer<typeof QuizListResponseSchema>;
+
+/** Request body for `POST /pdf/:id/quiz/submit` — the answers being graded. */
+export const QuizSubmitRequestSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string(),
+        choiceIndex: z.number().int().min(0).max(3),
+      }),
+    )
+    .min(1),
+});
+
+export type QuizSubmitRequest = z.infer<typeof QuizSubmitRequestSchema>;
+
+/** A single graded result item returned by `POST /pdf/:id/quiz/submit`. */
+export const QuizResultItemSchema = z.object({
+  questionId: z.string(),
+  choiceIndex: z.number().int(),
+  correctIndex: z.number().int(),
+  isCorrect: z.boolean(),
+  explanation: z.string(),
+  sourcePageIds: z.array(z.number().int().positive()),
+});
+
+export type QuizResultItem = z.infer<typeof QuizResultItemSchema>;
+
+/** Response for `POST /pdf/:id/quiz/submit` — grading results + score. */
+export const QuizSubmitResponseSchema = z.object({
+  results: z.array(QuizResultItemSchema),
+  correctCount: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+
+export type QuizSubmitResponse = z.infer<typeof QuizSubmitResponseSchema>;
+
+/** A single question's latest graded attempt, as returned by `GET /pdf/:id/quiz/attempts`. */
+export const QuizAttemptItemSchema = z.object({
+  questionId: z.string(),
+  question: z.string(),
+  choices: z.array(z.string()).length(4),
+  userAnswer: z.number().int(),
+  correctIndex: z.number().int(),
+  isCorrect: z.boolean(),
+  explanation: z.string(),
+  sourcePageIds: z.array(z.number().int().positive()),
+});
+
+export type QuizAttemptItem = z.infer<typeof QuizAttemptItemSchema>;
+
+/** Response for `GET /pdf/:id/quiz/attempts` — latest attempt per question, for restoring graded state. */
+export const QuizAttemptsResponseSchema = z.object({
+  items: z.array(QuizAttemptItemSchema),
+});
+
+export type QuizAttemptsResponse = z.infer<typeof QuizAttemptsResponseSchema>;
