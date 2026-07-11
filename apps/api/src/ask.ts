@@ -1,38 +1,6 @@
-import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
-import OpenAI from "openai";
 import type { AskResponse } from "@study-hack/shared";
-import { db } from "./db/client.js";
-import { pdfPage } from "./db/schema.js";
-
-// Full-context Q&A probe: the entire PDF's extracted text is stuffed into a
-// single prompt. This only scales to small documents — the char cap keeps the
-// API from silently blowing past a model's context window. Larger PDFs need a
-// retrieval (RAG) pass, which is a later slice.
-const MAX_CONTEXT_CHARS = 200_000;
-
-const MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
-
-export class AskError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-// Lazily instantiated so the rest of the API (upload/viewer) keeps working
-// without an OpenAI key configured; only the /ask route needs it.
-let client: OpenAI | undefined;
-function getClient(): OpenAI {
-  if (client) return client;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new AskError(503, "OPENAI_API_KEY is not configured");
-  }
-  client = new OpenAI({ apiKey });
-  return client;
-}
+import { LlmError, MODEL, buildPdfContext, getClient } from "./llm.js";
 
 /** Shape the model is instructed (via json_schema) to return — validated before use. */
 const ModelOutputSchema = z.object({
@@ -46,22 +14,7 @@ const ModelOutputSchema = z.object({
  * value satisfies AskResponseSchema; the route parses it at the boundary.
  */
 export async function askPdf(pdfId: string, question: string): Promise<AskResponse> {
-  const rows = await db
-    .select({ pageNumber: pdfPage.pageNumber, text: pdfPage.extractedText })
-    .from(pdfPage)
-    .where(eq(pdfPage.pdfId, pdfId))
-    .orderBy(asc(pdfPage.pageNumber));
-
-  if (rows.length === 0) {
-    throw new AskError(409, "page text is not ready for this PDF");
-  }
-
-  const context = rows.map((r) => `[p.${r.pageNumber}]\n${r.text}`).join("\n\n");
-  if (context.length > MAX_CONTEXT_CHARS) {
-    throw new AskError(413, "PDF too large for full-context Q&A");
-  }
-
-  const validPageNumbers = new Set(rows.map((r) => r.pageNumber));
+  const { context, validPageNumbers } = await buildPdfContext(pdfId);
   const openai = getClient();
 
   const completion = await openai.chat.completions.create({
@@ -102,7 +55,7 @@ export async function askPdf(pdfId: string, question: string): Promise<AskRespon
 
   const content = completion.choices[0]?.message.content;
   if (!content) {
-    throw new AskError(502, "empty response from the model");
+    throw new LlmError(502, "empty response from the model");
   }
 
   const parsed = ModelOutputSchema.parse(JSON.parse(content));

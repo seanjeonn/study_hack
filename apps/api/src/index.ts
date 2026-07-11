@@ -10,8 +10,12 @@ import {
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
+  QuizGenerateRequestSchema,
+  QuizGenerateResponseSchema,
+  QuizListResponseSchema,
 } from "@study-hack/shared";
-import { askPdf, AskError } from "./ask.js";
+import { askPdf } from "./ask.js";
+import { LlmError } from "./llm.js";
 import {
   addPdf,
   getExtractionReport,
@@ -20,6 +24,7 @@ import {
   getPdfStatus,
   renderPage,
 } from "./pdfStore.js";
+import { generateQuiz, listQuiz } from "./quiz.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -124,13 +129,59 @@ app.post("/pdf/:id/ask", async (req, res) => {
     // Validate the outbound payload at the boundary before returning it.
     res.json(AskResponseSchema.parse(result));
   } catch (err) {
-    if (err instanceof AskError) {
+    if (err instanceof LlmError) {
       res.status(err.status).json({ error: err.message });
       return;
     }
     console.error(`[ask] pdf=${req.params.id} failed:`, err);
     res.status(502).json({ error: "ask failed" });
   }
+});
+
+// Generate MCQ quiz questions grounded in the PDF's extracted text (page citations).
+app.post("/pdf/:id/quiz", async (req, res) => {
+  let body;
+  try {
+    body = QuizGenerateRequestSchema.parse(req.body);
+  } catch {
+    res.status(400).json({ error: "invalid request body" });
+    return;
+  }
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  if (status.status !== "text_ready") {
+    res.status(409).json({ error: "page text is not ready for this PDF" });
+    return;
+  }
+  try {
+    const result = await generateQuiz(req.params.id, body.count);
+    // Validate the outbound payload at the boundary before returning it.
+    res.json(QuizGenerateResponseSchema.parse(result));
+  } catch (err) {
+    if (err instanceof LlmError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    console.error(`[quiz] pdf=${req.params.id} failed:`, err);
+    res.status(502).json({ error: "quiz generation failed" });
+  }
+});
+
+// Previously generated quiz questions for a PDF.
+// NOTE (v1 tradeoff): this returns answerIndex + explanation to the client
+// because grading is client-side this slice. Slice 5 moves grading
+// server-side and will stop exposing the answer.
+app.get("/pdf/:id/quiz", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const result = await listQuiz(req.params.id);
+  res.json(QuizListResponseSchema.parse(result));
 });
 
 // Extracted text for a single page (n is 1-indexed). 404 until extraction runs.

@@ -7,11 +7,13 @@ import {
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
+  QuizGenerateResponseSchema,
   type AskResponse,
   type ExtractionReport,
   type PageTextResponse,
   type PdfStatus,
   type PdfUploadResponse,
+  type QuizQuestion,
 } from "@study-hack/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -42,6 +44,11 @@ export default function PdfStudio() {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askAnswer, setAskAnswer] = useState<AskResponse | null>(null);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const [quizChecked, setQuizChecked] = useState<Record<string, boolean>>({});
 
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
@@ -156,6 +163,40 @@ export default function PdfStudio() {
     }
   }
 
+  async function generateQuiz() {
+    if (!doc || quizLoading) return;
+    setQuizLoading(true);
+    setQuizError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 5 }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `quiz generation failed (${res.status})`);
+      }
+      // Validate the inbound payload at the boundary before trusting it.
+      const parsed = QuizGenerateResponseSchema.parse(await res.json());
+      setQuizQuestions(parsed.questions);
+      setQuizAnswers({});
+      setQuizChecked({});
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : "quiz generation failed");
+    } finally {
+      setQuizLoading(false);
+    }
+  }
+
+  function selectQuizChoice(questionId: string, choiceIndex: number) {
+    setQuizAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
+  }
+
+  function checkQuizAnswer(questionId: string) {
+    setQuizChecked((prev) => ({ ...prev, [questionId]: true }));
+  }
+
   function go(target: number) {
     if (!doc) return;
     const clamped = Math.min(Math.max(target, 1), doc.pageCount);
@@ -176,6 +217,11 @@ export default function PdfStudio() {
     setAskLoading(false);
     setAskError(null);
     setAskAnswer(null);
+    setQuizLoading(false);
+    setQuizError(null);
+    setQuizQuestions([]);
+    setQuizAnswers({});
+    setQuizChecked({});
   }
 
   if (!doc) {
@@ -263,6 +309,39 @@ export default function PdfStudio() {
               ) : (
                 <p className="text-sm text-[#807d72]">No supporting pages cited.</p>
               )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {status === "text_ready" ? (
+        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-[#5a5852]">Test yourself with a generated quiz.</p>
+            <button
+              type="button"
+              onClick={() => void generateQuiz()}
+              disabled={quizLoading}
+              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {quizLoading ? "Generating…" : "Generate quiz"}
+            </button>
+          </div>
+          {quizError ? <p className="text-sm text-[#cf2d56]">{quizError}</p> : null}
+          {quizQuestions.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              {quizQuestions.map((q, i) => (
+                <QuizQuestionCard
+                  key={q.id}
+                  index={i}
+                  question={q}
+                  selected={quizAnswers[q.id]}
+                  checked={quizChecked[q.id] ?? false}
+                  onSelect={(choiceIndex) => selectQuizChoice(q.id, choiceIndex)}
+                  onCheck={() => checkQuizAnswer(q.id)}
+                  onGoToPage={go}
+                />
+              ))}
             </div>
           ) : null}
         </div>
@@ -359,6 +438,85 @@ function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
       >
         {RECOMMENDATION_LABEL[report.recommendation]}
       </span>
+    </div>
+  );
+}
+
+function QuizQuestionCard({
+  index,
+  question,
+  selected,
+  checked,
+  onSelect,
+  onCheck,
+  onGoToPage,
+}: {
+  index: number;
+  question: QuizQuestion;
+  selected: number | undefined;
+  checked: boolean;
+  onSelect: (choiceIndex: number) => void;
+  onCheck: () => void;
+  onGoToPage: (n: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] p-4">
+      <p className="text-sm text-[#26251e]">
+        {index + 1}. {question.question}
+      </p>
+      <div className="flex flex-col gap-2">
+        {question.choices.map((choice, choiceIndex) => {
+          const isSelected = selected === choiceIndex;
+          const isCorrectChoice = choiceIndex === question.answerIndex;
+          let tone = "border-[#cfcdc4] text-[#26251e]";
+          if (checked && isCorrectChoice) {
+            tone = "border-[#1f8a65] bg-[#e6f4ee] text-[#1f8a65]";
+          } else if (checked && isSelected && !isCorrectChoice) {
+            tone = "border-[#cf2d56] bg-[#fbe6ec] text-[#cf2d56]";
+          } else if (isSelected) {
+            tone = "border-[#f54e00] bg-[#fdece4] text-[#26251e]";
+          }
+          return (
+            <button
+              key={choiceIndex}
+              type="button"
+              onClick={() => onSelect(choiceIndex)}
+              disabled={checked}
+              className={`rounded-md border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed ${tone}`}
+            >
+              {choice}
+            </button>
+          );
+        })}
+      </div>
+      {!checked ? (
+        <button
+          type="button"
+          onClick={onCheck}
+          disabled={selected === undefined}
+          className="w-fit rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Check
+        </button>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-[#5a5852]">{question.explanation}</p>
+          {question.sourcePageIds.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {question.sourcePageIds.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onGoToPage(n)}
+                  className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                >
+                  p.{n}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
