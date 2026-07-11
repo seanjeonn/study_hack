@@ -26,16 +26,16 @@ import {
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 const STATUS_LABEL: Record<PdfStatus, string> = {
-  uploaded: "텍스트 추출 대기 중…",
-  processing: "텍스트 추출 중…",
-  text_ready: "텍스트 준비됨",
-  failed: "텍스트 추출 실패",
+  uploaded: "Waiting to extract text…",
+  processing: "Extracting text…",
+  text_ready: "Text ready",
+  failed: "Text extraction failed",
 };
 
 const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> = {
-  ok: "추출 품질 양호",
-  consider_ocr: "OCR 고려 (텍스트가 거의 없는 페이지 많음)",
-  consider_llm_or_ocr: "OCR/LLM 고려 (텍스트 깨짐 의심)",
+  ok: "Extraction quality looks good",
+  consider_ocr: "Consider OCR (many pages have little or no text)",
+  consider_llm_or_ocr: "Consider OCR/LLM (text may be garbled)",
 };
 
 export default function PdfStudio() {
@@ -719,7 +719,7 @@ export default function PdfStudio() {
 
         <div className="flex min-h-[60vh] flex-col overflow-hidden rounded-xl border border-[#e6e5e0] bg-white">
           <div className="border-b border-[#efeee8] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-            추출 텍스트 · 페이지 {page}
+            Extracted text · page {page}
           </div>
           <div className="flex-1 overflow-auto p-4">
             <PageTextPanel
@@ -780,12 +780,12 @@ function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
     <div className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] bg-white px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-[#5a5852]">
         <span>
-          텍스트 커버리지 {Math.round(report.hasTextRatio * 100)}% ({report.textPages}/
+          Text coverage {Math.round(report.hasTextRatio * 100)}% ({report.textPages}/
           {report.pageCount}p)
         </span>
-        <span>평균 {Math.round(report.avgCharsPerTextPage)}자/페이지</span>
-        <span>깨짐 {Math.round(report.suspiciousRatio * 1000) / 10}%</span>
-        {report.suspectPages > 0 ? <span>의심 페이지 {report.suspectPages}개</span> : null}
+        <span>Avg {Math.round(report.avgCharsPerTextPage)} chars/page</span>
+        <span>Garbled {Math.round(report.suspiciousRatio * 1000) / 10}%</span>
+        {report.suspectPages > 0 ? <span>{report.suspectPages} suspect pages</span> : null}
       </div>
       <span
         className={`w-fit rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.88px] ${tone}`}
@@ -876,17 +876,17 @@ function PageTextPanel({
   if (status !== "text_ready") {
     return (
       <p className="text-sm text-[#807d72]">
-        {status === "failed" ? "텍스트 추출에 실패했습니다." : "텍스트를 추출하는 중입니다…"}
+        {status === "failed" ? "Text extraction failed." : "Extracting text…"}
       </p>
     );
   }
   if (!pageText) {
-    return <p className="text-sm text-[#807d72]">이 페이지의 텍스트를 불러오는 중…</p>;
+    return <p className="text-sm text-[#807d72]">Loading this page&apos;s text…</p>;
   }
   if (!pageText.hasText) {
     return (
       <p className="text-sm text-[#8a6418]">
-        이 페이지에는 추출 가능한 텍스트가 거의 없습니다 (스캔/이미지 — OCR 후보).
+        This page has little or no extractable text (scanned/image — OCR candidate).
       </p>
     );
   }
