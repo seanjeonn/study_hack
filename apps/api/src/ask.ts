@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AskResponse } from "@study-hack/shared";
 import { LlmError, MODEL, buildPdfContext, getClient } from "./llm.js";
+import { getMemoContext } from "./memo.js";
 
 /** Shape the model is instructed (via json_schema) to return — validated before use. */
 const ModelOutputSchema = z.object({
@@ -17,6 +18,15 @@ export async function askPdf(pdfId: string, question: string): Promise<AskRespon
   const { context, validPageNumbers } = await buildPdfContext(pdfId);
   const openai = getClient();
 
+  // Memos are short and user-authored, so we append them after the page
+  // context (and after buildPdfContext's 200k-char cap check) without
+  // re-running that cap against them — acceptable for v1.
+  const memos = await getMemoContext(pdfId);
+  const memoSection =
+    memos.length > 0
+      ? `\n\n---\nUser notes (memos):\n${memos.map((m) => `- ${m}`).join("\n")}`
+      : "";
+
   const completion = await openai.chat.completions.create({
     model: MODEL,
     messages: [
@@ -28,11 +38,14 @@ export async function askPdf(pdfId: string, question: string): Promise<AskRespon
           "[p.N]. Answer in the same language as the question. Base your answer " +
           "ONLY on the provided pages and cite the grounding page numbers in " +
           "citedPages. If the answer is not contained in the pages, say so plainly " +
-          "and return an empty citedPages array — never invent content or citations.",
+          "and return an empty citedPages array — never invent content or citations. " +
+          "User-provided notes (memos) may be included after the pages; you may use " +
+          "them for context, but the page-citation rules are unchanged — cite only " +
+          "real [p.N] pages, never invent citations.",
       },
       {
         role: "user",
-        content: `${context}\n\n---\nQuestion: ${question}`,
+        content: `${context}\n\n---\nQuestion: ${question}${memoSection}`,
       },
     ],
     response_format: {

@@ -7,6 +7,9 @@ import {
   AskResponseSchema,
   ExtractionReportSchema,
   HealthResponseSchema,
+  MemoCreateRequestSchema,
+  MemoListResponseSchema,
+  MemoSchema,
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
@@ -16,9 +19,11 @@ import {
   QuizListResponseSchema,
   QuizSubmitRequestSchema,
   QuizSubmitResponseSchema,
+  StudyLogResponseSchema,
 } from "@study-hack/shared";
 import { askPdf } from "./ask.js";
 import { LlmError } from "./llm.js";
+import { createMemo, deleteMemo, getStudyLog, listMemos } from "./memo.js";
 import {
   addPdf,
   getExtractionReport,
@@ -224,6 +229,67 @@ app.get("/pdf/:id/quiz/attempts", async (req, res) => {
   }
   const result = await listAttempts(req.params.id);
   res.json(QuizAttemptsResponseSchema.parse(result));
+});
+
+// Create a user-authored memo for a PDF, optionally attached to a viewer page.
+app.post("/pdf/:id/memos", async (req, res) => {
+  let body;
+  try {
+    body = MemoCreateRequestSchema.parse(req.body);
+  } catch {
+    res.status(400).json({ error: "invalid request body" });
+    return;
+  }
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  try {
+    const result = await createMemo(req.params.id, body.content, body.pageNumber);
+    // Validate the outbound payload at the boundary before returning it.
+    res.status(201).json(MemoSchema.parse(result));
+  } catch (err) {
+    console.error(`[memo] pdf=${req.params.id} failed:`, err);
+    res.status(502).json({ error: "failed to create memo" });
+  }
+});
+
+// All memos for a PDF.
+app.get("/pdf/:id/memos", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const result = await listMemos(req.params.id);
+  res.json(MemoListResponseSchema.parse(result));
+});
+
+// Delete a single memo.
+app.delete("/pdf/:id/memos/:memoId", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const ok = await deleteMemo(req.params.id, req.params.memoId);
+  if (!ok) {
+    res.status(404).json({ error: "memo not found" });
+    return;
+  }
+  res.status(204).end();
+});
+
+// Study log: memos and previously-missed quiz questions, newest first.
+app.get("/pdf/:id/study-log", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const result = await getStudyLog(req.params.id);
+  res.json(StudyLogResponseSchema.parse(result));
 });
 
 // Extracted text for a single page (n is 1-indexed). 404 until extraction runs.

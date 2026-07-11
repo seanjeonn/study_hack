@@ -105,3 +105,29 @@ export const quizAttempt = pgTable("quiz_attempt", {
     .notNull()
     .default(sql`now()`),
 });
+
+/**
+ * A user-authored study note (slice 6). The roadmap named a `page_id` FK, but
+ * the app is page-number-centric throughout (viewer, citations, quiz
+ * `sourcePageIds`), so we store the page number directly instead of a page
+ * row reference. `quiz_question_id` is unused in v1 — a hedge for attaching a
+ * memo to a specific question later. `ai_summary` is unused in v1 — a hedge
+ * for AI memo summarization later. `user_id` is a nullable hedge for the
+ * eventual multi-user slice, like `pdf.userId`.
+ */
+export const memo = pgTable("memo", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pdfId: uuid("pdf_id")
+    .notNull()
+    .references(() => pdf.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number"),
+  quizQuestionId: uuid("quiz_question_id").references(() => quizQuestion.id, {
+    onDelete: "cascade",
+  }),
+  content: text("content").notNull(),
+  aiSummary: text("ai_summary"),
+  userId: uuid("user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
