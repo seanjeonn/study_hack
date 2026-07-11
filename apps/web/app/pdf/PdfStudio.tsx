@@ -7,13 +7,17 @@ import {
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
+  QuizAttemptsResponseSchema,
   QuizGenerateResponseSchema,
+  QuizListResponseSchema,
+  QuizSubmitResponseSchema,
   type AskResponse,
   type ExtractionReport,
   type PageTextResponse,
   type PdfStatus,
   type PdfUploadResponse,
   type QuizQuestion,
+  type QuizResultItem,
 } from "@study-hack/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -48,7 +52,10 @@ export default function PdfStudio() {
   const [quizError, setQuizError] = useState<string | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
-  const [quizChecked, setQuizChecked] = useState<Record<string, boolean>>({});
+  const [quizResults, setQuizResults] = useState<Record<string, QuizResultItem> | null>(null);
+  const [quizScore, setQuizScore] = useState<{ correctCount: number; total: number } | null>(null);
+  const [quizSubmitting, setQuizSubmitting] = useState(false);
+  const [retryWrongOnly, setRetryWrongOnly] = useState(false);
 
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
@@ -109,6 +116,55 @@ export default function PdfStudio() {
       active = false;
     };
   }, [doc, status, page]);
+
+  // Once text is ready, restore a previously generated quiz + its graded
+  // state (if any) so a page reload doesn't lose progress. Never auto-generates.
+  useEffect(() => {
+    if (!doc || status !== "text_ready") return;
+    let active = true;
+    (async () => {
+      try {
+        const quizRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz`);
+        if (!quizRes.ok) return;
+        const quizParsed = QuizListResponseSchema.parse(await quizRes.json());
+        if (quizParsed.questions.length === 0) return;
+
+        const attemptsRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz/attempts`);
+        const attemptsParsed = attemptsRes.ok
+          ? QuizAttemptsResponseSchema.parse(await attemptsRes.json())
+          : { items: [] };
+        if (!active) return;
+
+        setQuizQuestions(quizParsed.questions);
+        if (attemptsParsed.items.length > 0) {
+          const answers: Record<string, number> = {};
+          const results: Record<string, QuizResultItem> = {};
+          for (const item of attemptsParsed.items) {
+            answers[item.questionId] = item.userAnswer;
+            results[item.questionId] = {
+              questionId: item.questionId,
+              choiceIndex: item.userAnswer,
+              correctIndex: item.correctIndex,
+              isCorrect: item.isCorrect,
+              explanation: item.explanation,
+              sourcePageIds: item.sourcePageIds,
+            };
+          }
+          setQuizAnswers(answers);
+          setQuizResults(results);
+          setQuizScore({
+            correctCount: attemptsParsed.items.filter((item) => item.isCorrect).length,
+            total: attemptsParsed.items.length,
+          });
+        }
+      } catch {
+        // leave quiz state empty; user can generate one manually
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [doc, status]);
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -181,7 +237,9 @@ export default function PdfStudio() {
       const parsed = QuizGenerateResponseSchema.parse(await res.json());
       setQuizQuestions(parsed.questions);
       setQuizAnswers({});
-      setQuizChecked({});
+      setQuizResults(null);
+      setQuizScore(null);
+      setRetryWrongOnly(false);
     } catch (err) {
       setQuizError(err instanceof Error ? err.message : "quiz generation failed");
     } finally {
@@ -190,11 +248,66 @@ export default function PdfStudio() {
   }
 
   function selectQuizChoice(questionId: string, choiceIndex: number) {
+    if (quizResults?.[questionId]) return;
     setQuizAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
   }
 
-  function checkQuizAnswer(questionId: string) {
-    setQuizChecked((prev) => ({ ...prev, [questionId]: true }));
+  async function submitQuiz() {
+    if (!doc || quizSubmitting) return;
+    const targets = quizQuestions.filter(
+      (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
+    );
+    if (targets.length === 0) return;
+    setQuizSubmitting(true);
+    setQuizError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          answers: targets.map((q) => ({ questionId: q.id, choiceIndex: quizAnswers[q.id] })),
+        }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `quiz grading failed (${res.status})`);
+      }
+      // Validate the inbound payload at the boundary before trusting it.
+      const parsed = QuizSubmitResponseSchema.parse(await res.json());
+      const merged = { ...(quizResults ?? {}) };
+      for (const result of parsed.results) merged[result.questionId] = result;
+      const graded = Object.values(merged);
+      setQuizResults(merged);
+      setQuizScore({
+        correctCount: graded.filter((r) => r.isCorrect).length,
+        total: graded.length,
+      });
+      setRetryWrongOnly(false);
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : "quiz grading failed");
+    } finally {
+      setQuizSubmitting(false);
+    }
+  }
+
+  function retryWrong() {
+    if (!quizResults) return;
+    const wrongIds = Object.values(quizResults)
+      .filter((r) => !r.isCorrect)
+      .map((r) => r.questionId);
+    if (wrongIds.length === 0) return;
+    setRetryWrongOnly(true);
+    setQuizResults((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      for (const id of wrongIds) delete next[id];
+      return next;
+    });
+    setQuizAnswers((prev) => {
+      const next = { ...prev };
+      for (const id of wrongIds) delete next[id];
+      return next;
+    });
   }
 
   function go(target: number) {
@@ -221,7 +334,10 @@ export default function PdfStudio() {
     setQuizError(null);
     setQuizQuestions([]);
     setQuizAnswers({});
-    setQuizChecked({});
+    setQuizResults(null);
+    setQuizScore(null);
+    setQuizSubmitting(false);
+    setRetryWrongOnly(false);
   }
 
   if (!doc) {
@@ -317,7 +433,11 @@ export default function PdfStudio() {
       {status === "text_ready" ? (
         <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-[#5a5852]">Test yourself with a generated quiz.</p>
+            <p className="text-sm text-[#5a5852]">
+              {quizScore
+                ? `Score: ${quizScore.correctCount} / ${quizScore.total}`
+                : "Test yourself with a generated quiz."}
+            </p>
             <button
               type="button"
               onClick={() => void generateQuiz()}
@@ -336,12 +456,35 @@ export default function PdfStudio() {
                   index={i}
                   question={q}
                   selected={quizAnswers[q.id]}
-                  checked={quizChecked[q.id] ?? false}
+                  result={quizResults?.[q.id] ?? null}
                   onSelect={(choiceIndex) => selectQuizChoice(q.id, choiceIndex)}
-                  onCheck={() => checkQuizAnswer(q.id)}
                   onGoToPage={go}
                 />
               ))}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void submitQuiz()}
+                  disabled={
+                    quizSubmitting ||
+                    !quizQuestions.some(
+                      (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
+                    )
+                  }
+                  className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {quizSubmitting ? "Grading…" : retryWrongOnly ? "Submit retry" : "Submit"}
+                </button>
+                {quizResults && Object.values(quizResults).some((r) => !r.isCorrect) ? (
+                  <button
+                    type="button"
+                    onClick={retryWrong}
+                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                  >
+                    Retry wrong answers
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
@@ -446,17 +589,15 @@ function QuizQuestionCard({
   index,
   question,
   selected,
-  checked,
+  result,
   onSelect,
-  onCheck,
   onGoToPage,
 }: {
   index: number;
   question: QuizQuestion;
   selected: number | undefined;
-  checked: boolean;
+  result: QuizResultItem | null;
   onSelect: (choiceIndex: number) => void;
-  onCheck: () => void;
   onGoToPage: (n: number) => void;
 }) {
   return (
@@ -467,11 +608,13 @@ function QuizQuestionCard({
       <div className="flex flex-col gap-2">
         {question.choices.map((choice, choiceIndex) => {
           const isSelected = selected === choiceIndex;
-          const isCorrectChoice = choiceIndex === question.answerIndex;
+          const isCorrectChoice = result !== null && choiceIndex === result.correctIndex;
+          const isWrongSelected =
+            result !== null && isSelected && choiceIndex !== result.correctIndex;
           let tone = "border-[#cfcdc4] text-[#26251e]";
-          if (checked && isCorrectChoice) {
+          if (isCorrectChoice) {
             tone = "border-[#1f8a65] bg-[#e6f4ee] text-[#1f8a65]";
-          } else if (checked && isSelected && !isCorrectChoice) {
+          } else if (isWrongSelected) {
             tone = "border-[#cf2d56] bg-[#fbe6ec] text-[#cf2d56]";
           } else if (isSelected) {
             tone = "border-[#f54e00] bg-[#fdece4] text-[#26251e]";
@@ -481,7 +624,7 @@ function QuizQuestionCard({
               key={choiceIndex}
               type="button"
               onClick={() => onSelect(choiceIndex)}
-              disabled={checked}
+              disabled={result !== null}
               className={`rounded-md border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed ${tone}`}
             >
               {choice}
@@ -489,21 +632,12 @@ function QuizQuestionCard({
           );
         })}
       </div>
-      {!checked ? (
-        <button
-          type="button"
-          onClick={onCheck}
-          disabled={selected === undefined}
-          className="w-fit rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Check
-        </button>
-      ) : (
+      {result ? (
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-[#5a5852]">{question.explanation}</p>
-          {question.sourcePageIds.length > 0 ? (
+          <p className="text-sm text-[#5a5852]">{result.explanation}</p>
+          {result.sourcePageIds.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              {question.sourcePageIds.map((n) => (
+              {result.sourcePageIds.map((n) => (
                 <button
                   key={n}
                   type="button"
@@ -516,7 +650,7 @@ function QuizQuestionCard({
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

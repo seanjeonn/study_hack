@@ -1,8 +1,14 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import type { QuizGenerateResponse, QuizQuestion } from "@study-hack/shared";
+import type {
+  QuizAttemptItem,
+  QuizAttemptsResponse,
+  QuizGenerateResponse,
+  QuizQuestion,
+  QuizSubmitResponse,
+} from "@study-hack/shared";
 import { db } from "./db/client.js";
-import { quizQuestion } from "./db/schema.js";
+import { quizAttempt, quizQuestion } from "./db/schema.js";
 import { LlmError, MODEL, buildPdfContext, getClient } from "./llm.js";
 
 /** Shape the model is instructed (via json_schema) to return — validated before use. */
@@ -156,9 +162,113 @@ function rowToQuizQuestion(row: typeof quizQuestion.$inferSelect): QuizQuestion 
     type: "mcq",
     question: row.question,
     choices: row.choices,
-    answerIndex: row.answerIndex,
-    explanation: row.explanation,
     sourcePageIds: row.sourcePageIds,
     difficulty: row.difficulty,
   };
+}
+
+/**
+ * Grade a set of submitted answers against the referenced quiz questions,
+ * persist each as a `quiz_attempt` row, and return the value satisfying
+ * QuizSubmitResponseSchema. Every submitted questionId must belong to `pdfId`.
+ */
+export async function gradeSubmission(
+  pdfId: string,
+  answers: { questionId: string; choiceIndex: number }[],
+): Promise<QuizSubmitResponse> {
+  const rows = await db
+    .select()
+    .from(quizQuestion)
+    .where(
+      inArray(
+        quizQuestion.id,
+        answers.map((a) => a.questionId),
+      ),
+    );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  for (const answer of answers) {
+    const row = byId.get(answer.questionId);
+    if (!row || row.pdfId !== pdfId) {
+      throw new LlmError(400, "invalid question in submission");
+    }
+  }
+
+  await db.insert(quizAttempt).values(
+    answers.map((answer) => {
+      const row = byId.get(answer.questionId)!;
+      return {
+        quizQuestionId: answer.questionId,
+        userAnswer: answer.choiceIndex,
+        isCorrect: answer.choiceIndex === row.answerIndex,
+      };
+    }),
+  );
+
+  const results = answers.map((answer) => {
+    const row = byId.get(answer.questionId)!;
+    return {
+      questionId: answer.questionId,
+      choiceIndex: answer.choiceIndex,
+      correctIndex: row.answerIndex,
+      isCorrect: answer.choiceIndex === row.answerIndex,
+      explanation: row.explanation,
+      sourcePageIds: row.sourcePageIds,
+    };
+  });
+
+  const correctCount = results.filter((r) => r.isCorrect).length;
+  const total = answers.length;
+
+  console.log("[grade] " + JSON.stringify({ pdfId, total, correctCount }));
+
+  return { results, correctCount, total };
+}
+
+/**
+ * The latest attempt per question for a PDF's quiz, for restoring graded
+ * state on reload. Rows are ordered by attempt recency (desc) and the first
+ * one seen per question is kept; the final list is sorted by the question's
+ * creation order.
+ */
+export async function listAttempts(pdfId: string): Promise<QuizAttemptsResponse> {
+  const rows = await db
+    .select({
+      questionId: quizQuestion.id,
+      question: quizQuestion.question,
+      choices: quizQuestion.choices,
+      answerIndex: quizQuestion.answerIndex,
+      explanation: quizQuestion.explanation,
+      sourcePageIds: quizQuestion.sourcePageIds,
+      questionCreatedAt: quizQuestion.createdAt,
+      userAnswer: quizAttempt.userAnswer,
+      isCorrect: quizAttempt.isCorrect,
+      attemptCreatedAt: quizAttempt.createdAt,
+    })
+    .from(quizAttempt)
+    .innerJoin(quizQuestion, eq(quizAttempt.quizQuestionId, quizQuestion.id))
+    .where(eq(quizQuestion.pdfId, pdfId))
+    .orderBy(desc(quizAttempt.createdAt));
+
+  const latestByQuestion = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (!latestByQuestion.has(row.questionId)) {
+      latestByQuestion.set(row.questionId, row);
+    }
+  }
+
+  const items: QuizAttemptItem[] = [...latestByQuestion.values()]
+    .sort((a, b) => a.questionCreatedAt.getTime() - b.questionCreatedAt.getTime())
+    .map((row) => ({
+      questionId: row.questionId,
+      question: row.question,
+      choices: row.choices,
+      userAnswer: row.userAnswer,
+      correctIndex: row.answerIndex,
+      isCorrect: row.isCorrect,
+      explanation: row.explanation,
+      sourcePageIds: row.sourcePageIds,
+    }));
+
+  return { items };
 }

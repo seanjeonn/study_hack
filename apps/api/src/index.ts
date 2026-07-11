@@ -10,9 +10,12 @@ import {
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
+  QuizAttemptsResponseSchema,
   QuizGenerateRequestSchema,
   QuizGenerateResponseSchema,
   QuizListResponseSchema,
+  QuizSubmitRequestSchema,
+  QuizSubmitResponseSchema,
 } from "@study-hack/shared";
 import { askPdf } from "./ask.js";
 import { LlmError } from "./llm.js";
@@ -24,7 +27,7 @@ import {
   getPdfStatus,
   renderPage,
 } from "./pdfStore.js";
-import { generateQuiz, listQuiz } from "./quiz.js";
+import { generateQuiz, gradeSubmission, listAttempts, listQuiz } from "./quiz.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -170,10 +173,8 @@ app.post("/pdf/:id/quiz", async (req, res) => {
   }
 });
 
-// Previously generated quiz questions for a PDF.
-// NOTE (v1 tradeoff): this returns answerIndex + explanation to the client
-// because grading is client-side this slice. Slice 5 moves grading
-// server-side and will stop exposing the answer.
+// Previously generated quiz questions for a PDF. Answers are withheld —
+// grading happens server-side via POST /pdf/:id/quiz/submit (slice 5).
 app.get("/pdf/:id/quiz", async (req, res) => {
   const status = await getPdfStatus(req.params.id);
   if (!status) {
@@ -182,6 +183,47 @@ app.get("/pdf/:id/quiz", async (req, res) => {
   }
   const result = await listQuiz(req.params.id);
   res.json(QuizListResponseSchema.parse(result));
+});
+
+// Grade a set of submitted quiz answers server-side and reveal the correct
+// answer + explanation only for the submitted questions.
+app.post("/pdf/:id/quiz/submit", async (req, res) => {
+  let body;
+  try {
+    body = QuizSubmitRequestSchema.parse(req.body);
+  } catch {
+    res.status(400).json({ error: "invalid request body" });
+    return;
+  }
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  try {
+    const result = await gradeSubmission(req.params.id, body.answers);
+    // Validate the outbound payload at the boundary before returning it.
+    res.json(QuizSubmitResponseSchema.parse(result));
+  } catch (err) {
+    if (err instanceof LlmError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    console.error(`[grade] pdf=${req.params.id} failed:`, err);
+    res.status(502).json({ error: "grading failed" });
+  }
+});
+
+// Latest graded attempt per question for a PDF's quiz, so the client can
+// restore prior graded state (e.g. after a page reload).
+app.get("/pdf/:id/quiz/attempts", async (req, res) => {
+  const status = await getPdfStatus(req.params.id);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
+    return;
+  }
+  const result = await listAttempts(req.params.id);
+  res.json(QuizAttemptsResponseSchema.parse(result));
 });
 
 // Extracted text for a single page (n is 1-indexed). 404 until extraction runs.
