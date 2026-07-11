@@ -4,6 +4,7 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import {
   AskResponseSchema,
   ExtractionReportSchema,
+  MemoSchema,
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
@@ -11,6 +12,7 @@ import {
   QuizGenerateResponseSchema,
   QuizListResponseSchema,
   QuizSubmitResponseSchema,
+  StudyLogResponseSchema,
   type AskResponse,
   type ExtractionReport,
   type PageTextResponse,
@@ -18,6 +20,7 @@ import {
   type PdfUploadResponse,
   type QuizQuestion,
   type QuizResultItem,
+  type StudyLogItem,
 } from "@study-hack/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -56,6 +59,10 @@ export default function PdfStudio() {
   const [quizScore, setQuizScore] = useState<{ correctCount: number; total: number } | null>(null);
   const [quizSubmitting, setQuizSubmitting] = useState(false);
   const [retryWrongOnly, setRetryWrongOnly] = useState(false);
+  const [memoDraft, setMemoDraft] = useState("");
+  const [memoSaving, setMemoSaving] = useState(false);
+  const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
+  const [studyLogError, setStudyLogError] = useState<string | null>(null);
 
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
@@ -165,6 +172,79 @@ export default function PdfStudio() {
       active = false;
     };
   }, [doc, status]);
+
+  // Once text is ready, load the study log (memos + missed questions).
+  useEffect(() => {
+    if (!doc || status !== "text_ready") return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
+        if (!res.ok) return;
+        const parsed = StudyLogResponseSchema.parse(await res.json());
+        if (active) setStudyLog(parsed.items);
+      } catch {
+        // leave studyLog empty; panel just won't show entries
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [doc, status]);
+
+  // Re-fetch the study log after a memo is added or deleted (user-triggered,
+  // not tied to an effect, so no active-guard is needed here).
+  async function refreshStudyLog() {
+    if (!doc) return;
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
+      if (!res.ok) return;
+      const parsed = StudyLogResponseSchema.parse(await res.json());
+      setStudyLog(parsed.items);
+    } catch {
+      // leave the previous study log in place
+    }
+  }
+
+  async function submitMemo() {
+    if (!doc || !memoDraft.trim() || memoSaving) return;
+    setMemoSaving(true);
+    setStudyLogError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: memoDraft.trim(), pageNumber: page }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `failed to save note (${res.status})`);
+      }
+      // Validate the inbound payload at the boundary before trusting it.
+      MemoSchema.parse(await res.json());
+      setMemoDraft("");
+      await refreshStudyLog();
+    } catch (err) {
+      setStudyLogError(err instanceof Error ? err.message : "failed to save note");
+    } finally {
+      setMemoSaving(false);
+    }
+  }
+
+  async function deleteMemoItem(memoId: string) {
+    if (!doc) return;
+    setStudyLogError(null);
+    try {
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos/${memoId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `failed to delete note (${res.status})`);
+      }
+      await refreshStudyLog();
+    } catch (err) {
+      setStudyLogError(err instanceof Error ? err.message : "failed to delete note");
+    }
+  }
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -338,6 +418,10 @@ export default function PdfStudio() {
     setQuizScore(null);
     setQuizSubmitting(false);
     setRetryWrongOnly(false);
+    setMemoDraft("");
+    setMemoSaving(false);
+    setStudyLog([]);
+    setStudyLogError(null);
   }
 
   if (!doc) {
@@ -487,6 +571,97 @@ export default function PdfStudio() {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {status === "text_ready" ? (
+        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              disabled={memoSaving}
+              placeholder={`Add a note for page ${page}…`}
+              rows={3}
+              className="w-full resize-none rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={() => void submitMemo()}
+              disabled={memoSaving || !memoDraft.trim()}
+              className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {memoSaving ? "Saving…" : "Add note"}
+            </button>
+          </div>
+
+          {studyLogError ? <p className="text-sm text-[#cf2d56]">{studyLogError}</p> : null}
+
+          {studyLog.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {studyLog.map((item) =>
+                item.kind === "memo" ? (
+                  <div
+                    key={`memo-${item.id}`}
+                    className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+                        Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void deleteMemoItem(item.id)}
+                        aria-label="Delete note"
+                        className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
+                    {item.pageNumber !== null ? (
+                      <button
+                        type="button"
+                        onClick={() => go(item.pageNumber as number)}
+                        className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                      >
+                        p.{item.pageNumber}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div
+                    key={`wrong-${item.questionId}`}
+                    className="flex flex-col gap-2 rounded-xl border border-[#f3c3d0] bg-[#fbe6ec] p-3"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#cf2d56]">
+                      Missed question
+                    </span>
+                    <p className="text-sm text-[#26251e]">{item.question}</p>
+                    <p className="text-sm text-[#5a5852]">
+                      Your answer: {item.userAnswerText} / Correct: {item.correctAnswerText}
+                    </p>
+                    {item.sourcePageIds.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {item.sourcePageIds.map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => go(n)}
+                            className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                          >
+                            p.{n}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ),
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-[#807d72]">No notes or missed questions yet.</p>
+          )}
         </div>
       ) : null}
 

@@ -213,3 +213,68 @@ export const QuizAttemptsResponseSchema = z.object({
 });
 
 export type QuizAttemptsResponse = z.infer<typeof QuizAttemptsResponseSchema>;
+
+/** Request body for `POST /pdf/:id/memos` — a user-authored study note. */
+export const MemoCreateRequestSchema = z.object({
+  content: z.string().min(1).max(4000),
+  pageNumber: z.number().int().positive().optional(),
+});
+
+export type MemoCreateRequest = z.infer<typeof MemoCreateRequestSchema>;
+
+/** A single user-authored memo attached to a PDF (optionally to one page). */
+export const MemoSchema = z.object({
+  id: z.string(),
+  pdfId: z.string(),
+  pageNumber: z.number().int().positive().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+});
+
+export type Memo = z.infer<typeof MemoSchema>;
+
+/** Response for `GET /pdf/:id/memos` — all memos for a PDF. */
+export const MemoListResponseSchema = z.object({
+  memos: z.array(MemoSchema),
+});
+
+export type MemoListResponse = z.infer<typeof MemoListResponseSchema>;
+
+/** A memo entry in the study log — `kind` discriminates it from a wrong-answer entry. */
+export const StudyLogMemoSchema = z.object({
+  kind: z.literal("memo"),
+  id: z.string(),
+  pageNumber: z.number().int().positive().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+});
+
+export type StudyLogMemo = z.infer<typeof StudyLogMemoSchema>;
+
+/** A missed-quiz-question entry in the study log — `kind` discriminates it from a memo entry. */
+export const StudyLogWrongAnswerSchema = z.object({
+  kind: z.literal("wrong_answer"),
+  questionId: z.string(),
+  question: z.string(),
+  sourcePageIds: z.array(z.number().int().positive()),
+  userAnswerText: z.string(),
+  correctAnswerText: z.string(),
+  createdAt: z.string(),
+});
+
+export type StudyLogWrongAnswer = z.infer<typeof StudyLogWrongAnswerSchema>;
+
+/** A single item in a PDF's study log — either a memo or a missed quiz question. */
+export const StudyLogItemSchema = z.discriminatedUnion("kind", [
+  StudyLogMemoSchema,
+  StudyLogWrongAnswerSchema,
+]);
+
+export type StudyLogItem = z.infer<typeof StudyLogItemSchema>;
+
+/** Response for `GET /pdf/:id/study-log` — memos and missed questions, newest first. */
+export const StudyLogResponseSchema = z.object({
+  items: z.array(StudyLogItemSchema),
+});
+
+export type StudyLogResponse = z.infer<typeof StudyLogResponseSchema>;
