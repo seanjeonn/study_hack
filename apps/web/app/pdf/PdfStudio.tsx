@@ -75,10 +75,13 @@ export default function PdfStudio({ initialDocId }: { initialDocId?: string }) {
   const [memoSaving, setMemoSaving] = useState(false);
   const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
   const [studyLogError, setStudyLogError] = useState<string | null>(null);
+  // Set when the user clicks "New PDF" so the reopen effect below cannot
+  // re-hydrate the just-cleared document before the URL drops its ?id=.
+  const [userReset, setUserReset] = useState(false);
 
   // Reopen an existing document (my-documents entry point, slice 8).
   useEffect(() => {
-    if (!initialDocId || doc) return;
+    if (!initialDocId || doc || userReset) return;
     let active = true;
     (async () => {
       try {
@@ -96,7 +99,7 @@ export default function PdfStudio({ initialDocId }: { initialDocId?: string }) {
     return () => {
       active = false;
     };
-  }, [initialDocId, doc]);
+  }, [initialDocId, doc, userReset]);
 
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
@@ -516,6 +519,14 @@ export default function PdfStudio({ initialDocId }: { initialDocId?: string }) {
     setStudyLogError(null);
   }
 
+  // "New PDF": clear the studio and drop the ?id= so the URL reflects a fresh
+  // upload. userReset guards the reopen effect during the reset→navigation gap.
+  function handleNewPdf() {
+    setUserReset(true);
+    reset();
+    router.push("/pdf");
+  }
+
   if (!doc) {
     return (
       <>
@@ -551,7 +562,7 @@ export default function PdfStudio({ initialDocId }: { initialDocId?: string }) {
           </div>
           <button
             type="button"
-            onClick={reset}
+            onClick={handleNewPdf}
             className="shrink-0 rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
           >
             New PDF
