@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { authClient } from "../../lib/auth-client";
 import {
   AskResponseSchema,
   ExtractionReportSchema,
@@ -39,6 +42,14 @@ const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> =
 };
 
 export default function PdfStudio() {
+  const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+
+  // Redirect to the login page when there is no active session.
+  useEffect(() => {
+    if (!sessionPending && !session) router.replace("/login");
+  }, [session, sessionPending, router]);
+
   const [doc, setDoc] = useState<PdfUploadResponse | null>(null);
   const [status, setStatus] = useState<PdfStatus | null>(null);
   const [report, setReport] = useState<ExtractionReport | null>(null);
@@ -192,6 +203,15 @@ export default function PdfStudio() {
       active = false;
     };
   }, [doc, status]);
+
+  // Hold rendering until the session resolves; the effect above redirects
+  // unauthenticated visitors to /login.
+  if (sessionPending || !session) return null;
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.replace("/login");
+  }
 
   // Re-fetch the study log after a memo is added or deleted (user-triggered,
   // not tied to an effect, so no active-guard is needed here).
@@ -452,306 +472,334 @@ export default function PdfStudio() {
 
   if (!doc) {
     return (
-      <section className="flex flex-col items-center gap-5 rounded-xl border border-[#e6e5e0] bg-white px-8 py-14 text-center">
-        <p className="text-sm text-[#5a5852]">Choose a PDF file to get started.</p>
-        <label className="cursor-pointer rounded-md bg-[#f54e00] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#d04200]">
-          {uploading ? "Uploading…" : "Select PDF"}
-          <input
-            type="file"
-            accept="application/pdf"
-            className="hidden"
-            disabled={uploading}
-            onChange={handleFile}
-          />
-        </label>
-        {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
-      </section>
+      <>
+        <StudioHeader email={session.user.email} onSignOut={handleSignOut} />
+        <section className="flex flex-col items-center gap-5 rounded-xl border border-[#e6e5e0] bg-white px-8 py-14 text-center">
+          <p className="text-sm text-[#5a5852]">Choose a PDF file to get started.</p>
+          <label className="cursor-pointer rounded-md bg-[#f54e00] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#d04200]">
+            {uploading ? "Uploading…" : "Select PDF"}
+            <input
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              disabled={uploading}
+              onChange={handleFile}
+            />
+          </label>
+          {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
+        </section>
+      </>
     );
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <p className="truncate text-sm text-[#5a5852]" title={doc.filename}>
-            {doc.filename}
-          </p>
-          {status ? <StatusBadge status={status} /> : null}
-        </div>
-        <button
-          type="button"
-          onClick={reset}
-          className="shrink-0 rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
-        >
-          New PDF
-        </button>
-      </div>
-
-      {report ? <ExtractionReportPanel report={report} /> : null}
-
-      {status === "text_ready" ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              value={askQuestion}
-              onChange={(e) => setAskQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitAsk();
-              }}
-              disabled={askLoading}
-              placeholder="Ask a question about this PDF…"
-              className="flex-1 rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => void submitAsk()}
-              disabled={askLoading || !askQuestion.trim()}
-              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {askLoading ? "Thinking…" : "Ask"}
-            </button>
-          </div>
-          {askLoading ? (
-            <p className="text-sm text-[#807d72]">Thinking…</p>
-          ) : askError ? (
-            <p className="text-sm text-[#cf2d56]">{askError}</p>
-          ) : askAnswer ? (
-            <div className="flex flex-col gap-2">
-              <p className="whitespace-pre-wrap text-sm text-[#26251e]">{askAnswer.answer}</p>
-              {askAnswer.citedPages.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {askAnswer.citedPages.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => go(n)}
-                      className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                    >
-                      p.{n}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-[#807d72]">No supporting pages cited.</p>
-              )}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {status === "text_ready" ? (
-        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-[#5a5852]">
-              {quizScore
-                ? `Score: ${quizScore.correctCount} / ${quizScore.total}`
-                : "Test yourself with a generated quiz."}
+    <>
+      <StudioHeader email={session.user.email} onSignOut={handleSignOut} />
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <p className="truncate text-sm text-[#5a5852]" title={doc.filename}>
+              {doc.filename}
             </p>
-            <button
-              type="button"
-              onClick={() => void generateQuiz()}
-              disabled={quizLoading}
-              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {quizLoading ? "Generating…" : "Generate quiz"}
-            </button>
+            {status ? <StatusBadge status={status} /> : null}
           </div>
-          {quizError ? <p className="text-sm text-[#cf2d56]">{quizError}</p> : null}
-          {quizQuestions.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {quizQuestions.map((q, i) => (
-                <QuizQuestionCard
-                  key={q.id}
-                  index={i}
-                  question={q}
-                  selected={quizAnswers[q.id]}
-                  result={quizResults?.[q.id] ?? null}
-                  onSelect={(choiceIndex) => selectQuizChoice(q.id, choiceIndex)}
-                  onGoToPage={go}
-                />
-              ))}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void submitQuiz()}
-                  disabled={
-                    quizSubmitting ||
-                    !quizQuestions.some(
-                      (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
-                    )
-                  }
-                  className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {quizSubmitting ? "Grading…" : retryWrongOnly ? "Submit retry" : "Submit"}
-                </button>
-                {quizResults && Object.values(quizResults).some((r) => !r.isCorrect) ? (
-                  <button
-                    type="button"
-                    onClick={retryWrong}
-                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                  >
-                    Retry wrong answers
-                  </button>
-                ) : null}
-                {quizScore && Object.values(quizResults ?? {}).some((r) => !r.isCorrect) ? (
-                  <button
-                    type="button"
-                    onClick={() => void generateRequiz()}
-                    disabled={requizLoading}
-                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {requizLoading ? "Generating review…" : "Retry weak areas"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+          <button
+            type="button"
+            onClick={reset}
+            className="shrink-0 rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
+          >
+            New PDF
+          </button>
         </div>
-      ) : null}
 
-      {status === "text_ready" ? (
-        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={memoDraft}
-              onChange={(e) => setMemoDraft(e.target.value)}
-              disabled={memoSaving}
-              placeholder={`Add a note for page ${page}…`}
-              rows={3}
-              className="w-full resize-none rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => void submitMemo()}
-              disabled={memoSaving || !memoDraft.trim()}
-              className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {memoSaving ? "Saving…" : "Add note"}
-            </button>
-          </div>
+        {report ? <ExtractionReportPanel report={report} /> : null}
 
-          {studyLogError ? <p className="text-sm text-[#cf2d56]">{studyLogError}</p> : null}
-
-          {studyLog.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {studyLog.map((item) =>
-                item.kind === "memo" ? (
-                  <div
-                    key={`memo-${item.id}`}
-                    className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-                        Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
-                      </span>
+        {status === "text_ready" ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] bg-white p-4">
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={askQuestion}
+                onChange={(e) => setAskQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitAsk();
+                }}
+                disabled={askLoading}
+                placeholder="Ask a question about this PDF…"
+                className="flex-1 rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => void submitAsk()}
+                disabled={askLoading || !askQuestion.trim()}
+                className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {askLoading ? "Thinking…" : "Ask"}
+              </button>
+            </div>
+            {askLoading ? (
+              <p className="text-sm text-[#807d72]">Thinking…</p>
+            ) : askError ? (
+              <p className="text-sm text-[#cf2d56]">{askError}</p>
+            ) : askAnswer ? (
+              <div className="flex flex-col gap-2">
+                <p className="whitespace-pre-wrap text-sm text-[#26251e]">{askAnswer.answer}</p>
+                {askAnswer.citedPages.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {askAnswer.citedPages.map((n) => (
                       <button
+                        key={n}
                         type="button"
-                        onClick={() => void deleteMemoItem(item.id)}
-                        aria-label="Delete note"
-                        className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
+                        onClick={() => go(n)}
+                        className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
                       >
-                        ×
+                        p.{n}
                       </button>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
-                    {item.pageNumber !== null ? (
-                      <button
-                        type="button"
-                        onClick={() => go(item.pageNumber as number)}
-                        className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                      >
-                        p.{item.pageNumber}
-                      </button>
-                    ) : null}
+                    ))}
                   </div>
                 ) : (
-                  <div
-                    key={`wrong-${item.questionId}`}
-                    className="flex flex-col gap-2 rounded-xl border border-[#f3c3d0] bg-[#fbe6ec] p-3"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#cf2d56]">
-                      Missed question
-                    </span>
-                    <p className="text-sm text-[#26251e]">{item.question}</p>
-                    <p className="text-sm text-[#5a5852]">
-                      Your answer: {item.userAnswerText} / Correct: {item.correctAnswerText}
-                    </p>
-                    {item.sourcePageIds.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {item.sourcePageIds.map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => go(n)}
-                            className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                          >
-                            p.{n}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ),
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-[#807d72]">No notes or missed questions yet.</p>
-          )}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="relative flex min-h-[60vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4">
-          {pageLoading ? (
-            <span className="absolute text-sm text-[#807d72]">Rendering page {page}…</span>
-          ) : null}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            key={page}
-            src={`${API_URL}/pdf/${doc.id}/pages/${page}`}
-            alt={`${doc.filename} — page ${page}`}
-            onLoad={() => setPageLoading(false)}
-            className="max-w-full"
-            style={{ opacity: pageLoading ? 0 : 1 }}
-          />
-        </div>
-
-        <div className="flex min-h-[60vh] flex-col overflow-hidden rounded-xl border border-[#e6e5e0] bg-white">
-          <div className="border-b border-[#efeee8] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-            Extracted text · page {page}
+                  <p className="text-sm text-[#807d72]">No supporting pages cited.</p>
+                )}
+              </div>
+            ) : null}
           </div>
-          <div className="flex-1 overflow-auto p-4">
-            <PageTextPanel
-              status={status}
-              pageText={pageText?.pageNumber === page ? pageText : null}
+        ) : null}
+
+        {status === "text_ready" ? (
+          <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-[#5a5852]">
+                {quizScore
+                  ? `Score: ${quizScore.correctCount} / ${quizScore.total}`
+                  : "Test yourself with a generated quiz."}
+              </p>
+              <button
+                type="button"
+                onClick={() => void generateQuiz()}
+                disabled={quizLoading}
+                className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {quizLoading ? "Generating…" : "Generate quiz"}
+              </button>
+            </div>
+            {quizError ? <p className="text-sm text-[#cf2d56]">{quizError}</p> : null}
+            {quizQuestions.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {quizQuestions.map((q, i) => (
+                  <QuizQuestionCard
+                    key={q.id}
+                    index={i}
+                    question={q}
+                    selected={quizAnswers[q.id]}
+                    result={quizResults?.[q.id] ?? null}
+                    onSelect={(choiceIndex) => selectQuizChoice(q.id, choiceIndex)}
+                    onGoToPage={go}
+                  />
+                ))}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void submitQuiz()}
+                    disabled={
+                      quizSubmitting ||
+                      !quizQuestions.some(
+                        (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
+                      )
+                    }
+                    className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {quizSubmitting ? "Grading…" : retryWrongOnly ? "Submit retry" : "Submit"}
+                  </button>
+                  {quizResults && Object.values(quizResults).some((r) => !r.isCorrect) ? (
+                    <button
+                      type="button"
+                      onClick={retryWrong}
+                      className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                    >
+                      Retry wrong answers
+                    </button>
+                  ) : null}
+                  {quizScore && Object.values(quizResults ?? {}).some((r) => !r.isCorrect) ? (
+                    <button
+                      type="button"
+                      onClick={() => void generateRequiz()}
+                      disabled={requizLoading}
+                      className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {requizLoading ? "Generating review…" : "Retry weak areas"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {status === "text_ready" ? (
+          <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={memoDraft}
+                onChange={(e) => setMemoDraft(e.target.value)}
+                disabled={memoSaving}
+                placeholder={`Add a note for page ${page}…`}
+                rows={3}
+                className="w-full resize-none rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => void submitMemo()}
+                disabled={memoSaving || !memoDraft.trim()}
+                className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {memoSaving ? "Saving…" : "Add note"}
+              </button>
+            </div>
+
+            {studyLogError ? <p className="text-sm text-[#cf2d56]">{studyLogError}</p> : null}
+
+            {studyLog.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {studyLog.map((item) =>
+                  item.kind === "memo" ? (
+                    <div
+                      key={`memo-${item.id}`}
+                      className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+                          Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void deleteMemoItem(item.id)}
+                          aria-label="Delete note"
+                          className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
+                      {item.pageNumber !== null ? (
+                        <button
+                          type="button"
+                          onClick={() => go(item.pageNumber as number)}
+                          className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                        >
+                          p.{item.pageNumber}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div
+                      key={`wrong-${item.questionId}`}
+                      className="flex flex-col gap-2 rounded-xl border border-[#f3c3d0] bg-[#fbe6ec] p-3"
+                    >
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#cf2d56]">
+                        Missed question
+                      </span>
+                      <p className="text-sm text-[#26251e]">{item.question}</p>
+                      <p className="text-sm text-[#5a5852]">
+                        Your answer: {item.userAnswerText} / Correct: {item.correctAnswerText}
+                      </p>
+                      {item.sourcePageIds.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {item.sourcePageIds.map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => go(n)}
+                              className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                            >
+                              p.{n}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-[#807d72]">No notes or missed questions yet.</p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="relative flex min-h-[60vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4">
+            {pageLoading ? (
+              <span className="absolute text-sm text-[#807d72]">Rendering page {page}…</span>
+            ) : null}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              key={page}
+              src={`${API_URL}/pdf/${doc.id}/pages/${page}`}
+              alt={`${doc.filename} — page ${page}`}
+              onLoad={() => setPageLoading(false)}
+              className="max-w-full"
+              style={{ opacity: pageLoading ? 0 : 1 }}
             />
           </div>
-        </div>
-      </div>
 
-      <div className="flex items-center justify-center gap-6">
-        <button
-          type="button"
-          onClick={() => go(page - 1)}
-          disabled={page <= 1}
-          className="rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Previous
-        </button>
-        <span className="font-mono text-sm tabular-nums text-[#5a5852]">
-          {page} / {doc.pageCount}
+          <div className="flex min-h-[60vh] flex-col overflow-hidden rounded-xl border border-[#e6e5e0] bg-white">
+            <div className="border-b border-[#efeee8] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+              Extracted text · page {page}
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <PageTextPanel
+                status={status}
+                pageText={pageText?.pageNumber === page ? pageText : null}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-6">
+          <button
+            type="button"
+            onClick={() => go(page - 1)}
+            disabled={page <= 1}
+            className="rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <span className="font-mono text-sm tabular-nums text-[#5a5852]">
+            {page} / {doc.pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => go(page + 1)}
+            disabled={page >= doc.pageCount}
+            className="rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function StudioHeader({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+  return (
+    <header className="flex items-center justify-between gap-4 border-b border-[#e6e5e0] pb-4">
+      <Link href="/" className="text-sm font-medium text-[#f54e00] hover:underline">
+        ← My documents
+      </Link>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="truncate text-sm text-[#5a5852]" title={email}>
+          {email}
         </span>
         <button
           type="button"
-          onClick={() => go(page + 1)}
-          disabled={page >= doc.pageCount}
-          className="rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={onSignOut}
+          className="shrink-0 rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
         >
-          Next
+          Sign out
         </button>
       </div>
-    </section>
+    </header>
   );
 }
 
