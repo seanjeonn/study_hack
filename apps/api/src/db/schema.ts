@@ -26,21 +26,26 @@ const bytea = customType<{ data: Buffer; default: false }>({
 /**
  * Uploaded PDFs. The original bytes live in `bytes`; page PNGs are rendered on
  * demand and cached in process memory (not persisted). `status` tracks the
- * processing stage for later slices; `user_id` is a nullable hedge for the
- * eventual multi-user slice so adding ownership later is not a destructive
- * migration.
+ * processing stage for later slices; `user_id` is the owner of this row —
+ * enforced by requireAuth + owner filters (slice 8).
  */
-export const pdf = pgTable("pdf", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  filename: text("filename").notNull(),
-  pageCount: integer("page_count").notNull(),
-  bytes: bytea("bytes").notNull(),
-  status: text("status").notNull().default("uploaded"),
-  userId: uuid("user_id"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`now()`),
-});
+export const pdf = pgTable(
+  "pdf",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    filename: text("filename").notNull(),
+    pageCount: integer("page_count").notNull(),
+    bytes: bytea("bytes").notNull(),
+    status: text("status").notNull().default("uploaded"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [index("pdf_user_id_idx").on(table.userId)],
+);
 
 /**
  * Per-page extracted text. Populated by the background extraction job after
@@ -66,8 +71,8 @@ export const pdfPage = pgTable(
  * in v1 (the column exists for future question types); `difficulty` is fixed
  * "medium" for now (also reserved for later). `sourcePageIds` are the 1-indexed
  * pages the question/answer is grounded in — the citation-accuracy signal,
- * same idea as `pdfPage` citations in `askPdf`. `user_id` is a nullable hedge
- * for the eventual multi-user slice, like `pdf.userId`.
+ * same idea as `pdfPage` citations in `askPdf`. `user_id` is the owner of this
+ * row — enforced by requireAuth + owner filters (slice 8).
  */
 export const quizQuestion = pgTable("quiz_question", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -81,7 +86,9 @@ export const quizQuestion = pgTable("quiz_question", {
   explanation: text("explanation").notNull(),
   sourcePageIds: integer("source_page_ids").array().notNull(),
   difficulty: text("difficulty").notNull(),
-  userId: uuid("user_id"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
@@ -91,8 +98,8 @@ export const quizQuestion = pgTable("quiz_question", {
  * A graded attempt at a single quiz question (slice 5 — server-side
  * grading). One row per submission; a question can be attempted more than
  * once (e.g. "retry wrong answers"), so the latest row per `quizQuestionId`
- * is the current graded state. `user_id` is a nullable hedge for the eventual
- * multi-user slice, like `quizQuestion.userId`.
+ * is the current graded state. `user_id` is the owner of this row — enforced
+ * by requireAuth + owner filters (slice 8).
  */
 export const quizAttempt = pgTable("quiz_attempt", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -101,7 +108,9 @@ export const quizAttempt = pgTable("quiz_attempt", {
     .references(() => quizQuestion.id, { onDelete: "cascade" }),
   userAnswer: integer("user_answer").notNull(),
   isCorrect: boolean("is_correct").notNull(),
-  userId: uuid("user_id"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
@@ -190,8 +199,8 @@ export const verification = pgTable(
  * `sourcePageIds`), so we store the page number directly instead of a page
  * row reference. `quiz_question_id` is unused in v1 — a hedge for attaching a
  * memo to a specific question later. `ai_summary` is unused in v1 — a hedge
- * for AI memo summarization later. `user_id` is a nullable hedge for the
- * eventual multi-user slice, like `pdf.userId`.
+ * for AI memo summarization later. `user_id` is the owner of this row —
+ * enforced by requireAuth + owner filters (slice 8).
  */
 export const memo = pgTable("memo", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -204,7 +213,9 @@ export const memo = pgTable("memo", {
   }),
   content: text("content").notNull(),
   aiSummary: text("ai_summary"),
-  userId: uuid("user_id"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
