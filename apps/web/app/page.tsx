@@ -1,49 +1,119 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { HealthResponseSchema, type HealthResponse } from "@study-hack/shared";
+import { useRouter } from "next/navigation";
+import { PdfListResponseSchema, type PdfListItem, type PdfStatus } from "@study-hack/shared";
+import { authClient } from "../lib/auth-client";
 
-const API_URL = process.env.API_URL ?? "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-async function getApiHealth(): Promise<HealthResponse | null> {
-  try {
-    const res = await fetch(`${API_URL}/health`, { cache: "no-store" });
-    if (!res.ok) return null;
-    // Validate the inbound payload at the boundary before trusting it.
-    return HealthResponseSchema.parse(await res.json());
-  } catch {
-    return null;
+const STATUS_LABEL: Record<PdfStatus, string> = {
+  uploaded: "Uploaded",
+  processing: "Processing",
+  text_ready: "Ready",
+  failed: "Failed",
+};
+
+export default function Home() {
+  const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const [pdfs, setPdfs] = useState<PdfListItem[]>([]);
+
+  // Redirect to the login page when there is no active session.
+  useEffect(() => {
+    if (!sessionPending && !session) router.replace("/login");
+  }, [session, sessionPending, router]);
+
+  // Load the caller's documents once a session is active.
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/pdf`, { credentials: "include" });
+        if (!res.ok) return;
+        // Validate the inbound payload at the boundary before trusting it.
+        const parsed = PdfListResponseSchema.parse(await res.json());
+        if (active) setPdfs(parsed.pdfs);
+      } catch {
+        // leave the list empty; the empty state renders instead
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.replace("/login");
   }
-}
 
-export default async function Home() {
-  const health = await getApiHealth();
+  // Hold rendering until the session resolves; the effect above redirects
+  // unauthenticated visitors to /login.
+  if (sessionPending || !session) return null;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 p-16 font-sans dark:bg-black">
-      <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
-        study_hack
-      </h1>
-      <section className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 dark:border-white/15 dark:bg-zinc-900">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-          API health
-        </h2>
-        {health ? (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-zinc-500">status</dt>
-            <dd className="font-mono text-emerald-600 dark:text-emerald-400">{health.status}</dd>
-            <dt className="text-zinc-500">service</dt>
-            <dd className="font-mono">{health.service}</dd>
-            <dt className="text-zinc-500">time</dt>
-            <dd className="font-mono">{health.time}</dd>
-          </dl>
+    <main className="min-h-screen bg-[#f7f7f4] px-6 py-16 text-[#26251e]">
+      <div className="mx-auto flex max-w-3xl flex-col gap-10">
+        <header className="flex items-center justify-between gap-4 border-b border-[#e6e5e0] pb-4">
+          <h1 className="text-3xl font-normal tracking-tight">My documents</h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="truncate text-sm text-[#5a5852]" title={session.user.email}>
+              {session.user.email}
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              className="shrink-0 rounded-md border border-[#cfcdc4] px-3 py-1.5 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        {pdfs.length > 0 ? (
+          <section className="flex flex-col gap-3">
+            <Link
+              href="/pdf"
+              className="self-end text-sm font-medium text-[#f54e00] hover:underline"
+            >
+              Upload a PDF →
+            </Link>
+            {pdfs.map((pdf) => (
+              <Link
+                key={pdf.id}
+                href={`/pdf?id=${pdf.id}`}
+                className="flex items-center justify-between gap-4 rounded-xl border border-[#e6e5e0] bg-white px-5 py-4 transition-colors hover:bg-[#fafaf7]"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span
+                    className="truncate text-sm font-medium text-[#26251e]"
+                    title={pdf.filename}
+                  >
+                    {pdf.filename}
+                  </span>
+                  <span className="text-xs text-[#807d72]">
+                    {pdf.pageCount} {pdf.pageCount === 1 ? "page" : "pages"} ·{" "}
+                    {new Date(pdf.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <span className="shrink-0 rounded-full bg-[#efeee8] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+                  {STATUS_LABEL[pdf.status]}
+                </span>
+              </Link>
+            ))}
+          </section>
         ) : (
-          <p className="text-sm text-amber-600 dark:text-amber-400">
-            API unreachable — start it with <code className="font-mono">pnpm dev:api</code>.
-          </p>
+          <section className="flex flex-col items-center gap-4 rounded-xl border border-[#e6e5e0] bg-white px-8 py-14 text-center">
+            <p className="text-sm text-[#5a5852]">No documents yet — upload your first PDF.</p>
+            <Link href="/pdf" className="text-sm font-medium text-[#f54e00] hover:underline">
+              Upload a PDF →
+            </Link>
+          </section>
         )}
-      </section>
-      <Link href="/pdf" className="text-sm font-medium text-[#f54e00] hover:underline">
-        Open the PDF reader →
-      </Link>
+      </div>
     </main>
   );
 }

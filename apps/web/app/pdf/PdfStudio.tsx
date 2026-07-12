@@ -41,7 +41,7 @@ const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> =
   consider_llm_or_ocr: "Consider OCR/LLM (text may be garbled)",
 };
 
-export default function PdfStudio() {
+export default function PdfStudio({ initialDocId }: { initialDocId?: string }) {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
 
@@ -76,13 +76,35 @@ export default function PdfStudio() {
   const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
   const [studyLogError, setStudyLogError] = useState<string | null>(null);
 
+  // Reopen an existing document (my-documents entry point, slice 8).
+  useEffect(() => {
+    if (!initialDocId || doc) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/pdf/${initialDocId}`, { credentials: "include" });
+        if (!res.ok) throw new Error(`failed to open document (${res.status})`);
+        const parsed = PdfStatusResponseSchema.parse(await res.json());
+        if (!active) return;
+        setDoc({ id: parsed.id, filename: parsed.filename, pageCount: parsed.pageCount });
+        setStatus(parsed.status);
+        setPage(1);
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : "failed to open document");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [initialDocId, doc]);
+
   // Poll processing status until extraction reaches a terminal state.
   useEffect(() => {
     if (!doc || status === "text_ready" || status === "failed") return;
     let active = true;
     const tick = async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}`);
+        const res = await fetch(`${API_URL}/pdf/${doc.id}`, { credentials: "include" });
         if (!res.ok) return;
         const parsed = PdfStatusResponseSchema.parse(await res.json());
         if (active) setStatus(parsed.status);
@@ -104,7 +126,9 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/extraction-report`);
+        const res = await fetch(`${API_URL}/pdf/${doc.id}/extraction-report`, {
+          credentials: "include",
+        });
         if (!res.ok) return;
         const parsed = ExtractionReportSchema.parse(await res.json());
         if (active) setReport(parsed);
@@ -123,7 +147,9 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/text`);
+        const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/text`, {
+          credentials: "include",
+        });
         if (!res.ok) return;
         const parsed = PageTextResponseSchema.parse(await res.json());
         if (active) setPageText(parsed);
@@ -143,12 +169,14 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const quizRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz`);
+        const quizRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz`, { credentials: "include" });
         if (!quizRes.ok) return;
         const quizParsed = QuizListResponseSchema.parse(await quizRes.json());
         if (quizParsed.questions.length === 0) return;
 
-        const attemptsRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz/attempts`);
+        const attemptsRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz/attempts`, {
+          credentials: "include",
+        });
         const attemptsParsed = attemptsRes.ok
           ? QuizAttemptsResponseSchema.parse(await attemptsRes.json())
           : { items: [] };
@@ -191,7 +219,9 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
+        const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`, {
+          credentials: "include",
+        });
         if (!res.ok) return;
         const parsed = StudyLogResponseSchema.parse(await res.json());
         if (active) setStudyLog(parsed.items);
@@ -218,7 +248,9 @@ export default function PdfStudio() {
   async function refreshStudyLog() {
     if (!doc) return;
     try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`, {
+        credentials: "include",
+      });
       if (!res.ok) return;
       const parsed = StudyLogResponseSchema.parse(await res.json());
       setStudyLog(parsed.items);
@@ -236,6 +268,7 @@ export default function PdfStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: memoDraft.trim(), pageNumber: page }),
+        credentials: "include",
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -256,7 +289,10 @@ export default function PdfStudio() {
     if (!doc) return;
     setStudyLogError(null);
     try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos/${memoId}`, { method: "DELETE" });
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos/${memoId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `failed to delete note (${res.status})`);
@@ -275,7 +311,11 @@ export default function PdfStudio() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`${API_URL}/pdf`, { method: "POST", body });
+      const res = await fetch(`${API_URL}/pdf`, {
+        method: "POST",
+        body,
+        credentials: "include",
+      });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `upload failed (${res.status})`);
@@ -305,6 +345,7 @@ export default function PdfStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: askQuestion.trim() }),
+        credentials: "include",
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -329,6 +370,7 @@ export default function PdfStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ count: 5 }),
+        credentials: "include",
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -368,6 +410,7 @@ export default function PdfStudio() {
         body: JSON.stringify({
           answers: targets.map((q) => ({ questionId: q.id, choiceIndex: quizAnswers[q.id] })),
         }),
+        credentials: "include",
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -416,7 +459,10 @@ export default function PdfStudio() {
     setRequizLoading(true);
     setQuizError(null);
     try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/requiz`, { method: "POST" });
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/requiz`, {
+        method: "POST",
+        credentials: "include",
+      });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `re-quiz generation failed (${res.status})`);
