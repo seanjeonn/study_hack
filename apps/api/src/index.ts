@@ -21,6 +21,8 @@ import {
   QuizSubmitResponseSchema,
   StudyLogResponseSchema,
 } from "@study-hack/shared";
+import { toNodeHandler } from "better-auth/node";
+import { auth, requireAuth, WEB_ORIGIN } from "./auth.js";
 import { askPdf } from "./ask.js";
 import { LlmError } from "./llm.js";
 import { createMemo, deleteMemo, getStudyLog, listMemos } from "./memo.js";
@@ -37,8 +39,17 @@ import { generateQuiz, generateRequiz, gradeSubmission, listAttempts, listQuiz }
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 
-app.use(cors());
+app.use(cors({ origin: WEB_ORIGIN, credentials: true }));
+
+// better-auth owns /api/auth/*. Must be mounted BEFORE express.json() —
+// the handler reads the raw body itself (official better-auth requirement).
+// `{*any}` is the Express 5 named-wildcard syntax.
+app.all("/api/auth/{*any}", toNodeHandler(auth));
+
 app.use(express.json());
+
+// Everything under /pdf requires a session (login-required policy, slice 8).
+app.use("/pdf", requireAuth);
 
 const uploadSingle = multer({
   storage: multer.memoryStorage(),
