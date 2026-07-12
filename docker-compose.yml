@@ -1,0 +1,17 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: study_hack
+      POSTGRES_PASSWORD: study_hack
+      POSTGRES_DB: study_hack
+    ports:
+      # Host port 5436 (not the default 5432) to avoid colliding with other
+      # local Postgres instances. Container still listens on 5432 internally.
+      - "5436:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
