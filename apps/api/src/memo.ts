@@ -17,9 +17,10 @@ function rowToMemo(row: typeof memo.$inferSelect): Memo {
 export async function createMemo(
   pdfId: string,
   content: string,
-  pageNumber?: number,
+  pageNumber: number | undefined,
+  userId: string,
 ): Promise<Memo> {
-  const [row] = await db.insert(memo).values({ pdfId, content, pageNumber }).returning();
+  const [row] = await db.insert(memo).values({ pdfId, content, pageNumber, userId }).returning();
   return rowToMemo(row);
 }
 

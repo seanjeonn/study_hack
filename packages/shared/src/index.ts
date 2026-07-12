@@ -44,6 +44,22 @@ export const PdfStatusResponseSchema = z.object({
 
 export type PdfStatusResponse = z.infer<typeof PdfStatusResponseSchema>;
 
+/** A single PDF in the caller's my-documents list (`GET /pdf`). */
+export const PdfListItemSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  pageCount: z.number().int(),
+  status: PdfStatusSchema,
+  createdAt: z.string(),
+});
+export type PdfListItem = z.infer<typeof PdfListItemSchema>;
+
+/** Response for `GET /pdf` — the caller's PDFs, newest first. */
+export const PdfListResponseSchema = z.object({
+  pdfs: z.array(PdfListItemSchema),
+});
+export type PdfListResponse = z.infer<typeof PdfListResponseSchema>;
+
 /** Response for `GET /pdf/:id/pages/:n/text` — a single page's extracted text. */
 export const PageTextResponseSchema = z.object({
   pageNumber: z.number().int().positive(),

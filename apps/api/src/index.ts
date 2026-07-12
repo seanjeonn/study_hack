@@ -11,6 +11,7 @@ import {
   MemoListResponseSchema,
   MemoSchema,
   PageTextResponseSchema,
+  PdfListResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
   QuizAttemptsResponseSchema,
@@ -32,6 +33,7 @@ import {
   getPageText,
   getPdf,
   getPdfStatus,
+  listPdfs,
   renderPage,
 } from "./pdfStore.js";
 import { generateQuiz, generateRequiz, gradeSubmission, listAttempts, listQuiz } from "./quiz.js";
@@ -75,6 +77,13 @@ app.get("/health", (_req, res) => {
   res.json(payload);
 });
 
+// The caller's PDFs, newest first (my-documents list, slice 8).
+app.get("/pdf", async (_req, res) => {
+  const userId = res.locals.userId as string;
+  const result = await listPdfs(userId);
+  res.json(PdfListResponseSchema.parse(result));
+});
+
 // Upload a PDF, parse it, and return its id + page count.
 app.post("/pdf", (req, res) => {
   uploadSingle(req, res, async (err) => {
@@ -94,7 +103,8 @@ app.post("/pdf", (req, res) => {
       return;
     }
     try {
-      const result = await addPdf(req.file.buffer, req.file.originalname);
+      const userId = res.locals.userId as string;
+      const result = await addPdf(req.file.buffer, req.file.originalname, userId);
       // Validate the outbound payload at the boundary before returning it.
       const payload = PdfUploadResponseSchema.parse(result);
       res.status(201).json(payload);
@@ -109,7 +119,8 @@ app.post("/pdf", (req, res) => {
 
 // PDF metadata + processing status, for the web client to poll extraction progress.
 app.get("/pdf/:id", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -120,7 +131,8 @@ app.get("/pdf/:id", async (req, res) => {
 
 // Extraction-quality report aggregated from the page texts.
 app.get("/pdf/:id/extraction-report", async (req, res) => {
-  const report = await getExtractionReport(req.params.id);
+  const userId = res.locals.userId as string;
+  const report = await getExtractionReport(req.params.id, userId);
   if (!report) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -131,6 +143,7 @@ app.get("/pdf/:id/extraction-report", async (req, res) => {
 
 // Full-context Q&A over the PDF's extracted text (quality probe — small PDFs only).
 app.post("/pdf/:id/ask", async (req, res) => {
+  const userId = res.locals.userId as string;
   let body;
   try {
     body = AskRequestSchema.parse(req.body);
@@ -138,7 +151,7 @@ app.post("/pdf/:id/ask", async (req, res) => {
     res.status(400).json({ error: "invalid request body" });
     return;
   }
-  const status = await getPdfStatus(req.params.id);
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -159,6 +172,7 @@ app.post("/pdf/:id/ask", async (req, res) => {
 
 // Generate MCQ quiz questions grounded in the PDF's extracted text (page citations).
 app.post("/pdf/:id/quiz", async (req, res) => {
+  const userId = res.locals.userId as string;
   let body;
   try {
     body = QuizGenerateRequestSchema.parse(req.body);
@@ -166,7 +180,7 @@ app.post("/pdf/:id/quiz", async (req, res) => {
     res.status(400).json({ error: "invalid request body" });
     return;
   }
-  const status = await getPdfStatus(req.params.id);
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -176,7 +190,7 @@ app.post("/pdf/:id/quiz", async (req, res) => {
     return;
   }
   try {
-    const result = await generateQuiz(req.params.id, body.count);
+    const result = await generateQuiz(req.params.id, body.count, userId);
     // Validate the outbound payload at the boundary before returning it.
     res.json(QuizGenerateResponseSchema.parse(result));
   } catch (err) {
@@ -192,7 +206,8 @@ app.post("/pdf/:id/quiz", async (req, res) => {
 // Previously generated quiz questions for a PDF. Answers are withheld —
 // grading happens server-side via POST /pdf/:id/quiz/submit (slice 5).
 app.get("/pdf/:id/quiz", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -204,6 +219,7 @@ app.get("/pdf/:id/quiz", async (req, res) => {
 // Grade a set of submitted quiz answers server-side and reveal the correct
 // answer + explanation only for the submitted questions.
 app.post("/pdf/:id/quiz/submit", async (req, res) => {
+  const userId = res.locals.userId as string;
   let body;
   try {
     body = QuizSubmitRequestSchema.parse(req.body);
@@ -211,13 +227,13 @@ app.post("/pdf/:id/quiz/submit", async (req, res) => {
     res.status(400).json({ error: "invalid request body" });
     return;
   }
-  const status = await getPdfStatus(req.params.id);
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
   }
   try {
-    const result = await gradeSubmission(req.params.id, body.answers);
+    const result = await gradeSubmission(req.params.id, body.answers, userId);
     // Validate the outbound payload at the boundary before returning it.
     res.json(QuizSubmitResponseSchema.parse(result));
   } catch (err) {
@@ -233,7 +249,8 @@ app.post("/pdf/:id/quiz/submit", async (req, res) => {
 // Weakness-based re-quiz: generate new questions covering the same concepts
 // as the learner's most recently missed questions, closing the study loop.
 app.post("/pdf/:id/quiz/requiz", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -243,7 +260,7 @@ app.post("/pdf/:id/quiz/requiz", async (req, res) => {
     return;
   }
   try {
-    const result = await generateRequiz(req.params.id);
+    const result = await generateRequiz(req.params.id, userId);
     // Validate the outbound payload at the boundary before returning it.
     res.json(QuizGenerateResponseSchema.parse(result));
   } catch (err) {
@@ -259,7 +276,8 @@ app.post("/pdf/:id/quiz/requiz", async (req, res) => {
 // Latest graded attempt per question for a PDF's quiz, so the client can
 // restore prior graded state (e.g. after a page reload).
 app.get("/pdf/:id/quiz/attempts", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -270,6 +288,7 @@ app.get("/pdf/:id/quiz/attempts", async (req, res) => {
 
 // Create a user-authored memo for a PDF, optionally attached to a viewer page.
 app.post("/pdf/:id/memos", async (req, res) => {
+  const userId = res.locals.userId as string;
   let body;
   try {
     body = MemoCreateRequestSchema.parse(req.body);
@@ -277,13 +296,13 @@ app.post("/pdf/:id/memos", async (req, res) => {
     res.status(400).json({ error: "invalid request body" });
     return;
   }
-  const status = await getPdfStatus(req.params.id);
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
   }
   try {
-    const result = await createMemo(req.params.id, body.content, body.pageNumber);
+    const result = await createMemo(req.params.id, body.content, body.pageNumber, userId);
     // Validate the outbound payload at the boundary before returning it.
     res.status(201).json(MemoSchema.parse(result));
   } catch (err) {
@@ -294,7 +313,8 @@ app.post("/pdf/:id/memos", async (req, res) => {
 
 // All memos for a PDF.
 app.get("/pdf/:id/memos", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -305,7 +325,8 @@ app.get("/pdf/:id/memos", async (req, res) => {
 
 // Delete a single memo.
 app.delete("/pdf/:id/memos/:memoId", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -320,7 +341,8 @@ app.delete("/pdf/:id/memos/:memoId", async (req, res) => {
 
 // Study log: memos and previously-missed quiz questions, newest first.
 app.get("/pdf/:id/study-log", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
+  const userId = res.locals.userId as string;
+  const status = await getPdfStatus(req.params.id, userId);
   if (!status) {
     res.status(404).json({ error: "pdf not found" });
     return;
@@ -331,9 +353,15 @@ app.get("/pdf/:id/study-log", async (req, res) => {
 
 // Extracted text for a single page (n is 1-indexed). 404 until extraction runs.
 app.get("/pdf/:id/pages/:n/text", async (req, res) => {
+  const userId = res.locals.userId as string;
   const n = Number(req.params.n);
   if (!Number.isInteger(n) || n < 1) {
     res.status(400).json({ error: "page out of range" });
+    return;
+  }
+  const status = await getPdfStatus(req.params.id, userId);
+  if (!status) {
+    res.status(404).json({ error: "pdf not found" });
     return;
   }
   const pageText = await getPageText(req.params.id, n);
@@ -347,7 +375,8 @@ app.get("/pdf/:id/pages/:n/text", async (req, res) => {
 
 // Serve a single page as a PNG image (n is 1-indexed).
 app.get("/pdf/:id/pages/:n", async (req, res) => {
-  const entry = await getPdf(req.params.id);
+  const userId = res.locals.userId as string;
+  const entry = await getPdf(req.params.id, userId);
   if (!entry) {
     res.status(404).json({ error: "pdf not found" });
     return;

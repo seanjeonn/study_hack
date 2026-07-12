@@ -36,6 +36,7 @@ async function runQuizGeneration(
   systemPrompt: string,
   userMessage: string,
   validPageNumbers: Set<number>,
+  userId: string,
 ): Promise<{
   kept: z.infer<typeof ModelOutputSchema>["questions"];
   inserted: (typeof quizQuestion.$inferSelect)[];
@@ -113,6 +114,7 @@ async function runQuizGeneration(
               explanation: q.explanation,
               sourcePageIds: q.sourcePageIds,
               difficulty: "medium",
+              userId,
             })),
           )
           .returning()
@@ -132,7 +134,11 @@ async function runQuizGeneration(
  * return the value satisfying QuizGenerateResponseSchema (the route parses it
  * at the boundary).
  */
-export async function generateQuiz(pdfId: string, count: number): Promise<QuizGenerateResponse> {
+export async function generateQuiz(
+  pdfId: string,
+  count: number,
+  userId: string,
+): Promise<QuizGenerateResponse> {
   const { context, validPageNumbers } = await buildPdfContext(pdfId);
 
   const systemPrompt =
@@ -151,6 +157,7 @@ export async function generateQuiz(pdfId: string, count: number): Promise<QuizGe
     systemPrompt,
     userMessage,
     validPageNumbers,
+    userId,
   );
 
   // One JSON line per generation, feeding the citation-accuracy + cost
@@ -180,7 +187,7 @@ export async function generateQuiz(pdfId: string, count: number): Promise<QuizGe
  * (from a different angle) grounded only in those questions' source pages —
  * closing the study loop without simply re-asking the same question.
  */
-export async function generateRequiz(pdfId: string): Promise<QuizGenerateResponse> {
+export async function generateRequiz(pdfId: string, userId: string): Promise<QuizGenerateResponse> {
   const wrongQuestions = await listLatestWrongQuestions(pdfId);
   if (wrongQuestions.length === 0) {
     throw new LlmError(409, "no wrong answers to review");
@@ -215,6 +222,7 @@ export async function generateRequiz(pdfId: string): Promise<QuizGenerateRespons
     systemPrompt,
     userMessage,
     validPageNumbers,
+    userId,
   );
 
   console.log(
@@ -266,6 +274,7 @@ function rowToQuizQuestion(row: typeof quizQuestion.$inferSelect): QuizQuestion 
 export async function gradeSubmission(
   pdfId: string,
   answers: { questionId: string; choiceIndex: number }[],
+  userId: string,
 ): Promise<QuizSubmitResponse> {
   const rows = await db
     .select()
@@ -292,6 +301,7 @@ export async function gradeSubmission(
         quizQuestionId: answer.questionId,
         userAnswer: answer.choiceIndex,
         isCorrect: answer.choiceIndex === row.answerIndex,
+        userId,
       };
     }),
   );

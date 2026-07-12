@@ -1,6 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { pdf as pdfRender } from "pdf-to-img";
-import type { ExtractionRecommendation, ExtractionReport } from "@study-hack/shared";
+import type {
+  ExtractionRecommendation,
+  ExtractionReport,
+  PdfListItem,
+  PdfListResponse,
+} from "@study-hack/shared";
 import { db } from "./db/client.js";
 import { pdf, pdfPage } from "./db/schema.js";
 import { countSuspiciousChars, extractPdfText } from "./textExtract.js";
@@ -31,19 +36,20 @@ const docCache = new Map<string, DocCacheEntry>();
 export async function addPdf(
   buffer: Buffer,
   filename: string,
+  userId: string,
 ): Promise<{ id: string; pageCount: number; filename: string }> {
   // Parses the PDF (lazy) and exposes page count without rendering any page yet.
   const document = await pdfRender(buffer, { scale: 2 });
   const pageCount = document.length;
   const [row] = await db
     .insert(pdf)
-    .values({ filename, pageCount, bytes: buffer })
+    .values({ filename, pageCount, bytes: buffer, userId })
     .returning({ id: pdf.id });
   docCache.set(row.id, { document, pages: new Map() });
   // Kick off text extraction in the background — the upload response must not
   // wait on it. Status transitions (processing -> text_ready/failed) and errors
   // are handled inside runTextExtraction.
-  void runTextExtraction(row.id, buffer);
+  void runTextExtraction(row.id, buffer, userId);
   return { id: row.id, pageCount, filename };
 }
 
@@ -51,7 +57,7 @@ export async function addPdf(
  * Background job: extract per-page text, persist it to `pdf_page`, and advance
  * `pdf.status`. Fire-and-forget — failures land in `status='failed'` + a log.
  */
-async function runTextExtraction(id: string, buffer: Buffer): Promise<void> {
+async function runTextExtraction(id: string, buffer: Buffer, userId: string): Promise<void> {
   try {
     await db.update(pdf).set({ status: "processing" }).where(eq(pdf.id, id));
     const pages = await extractPdfText(buffer);
@@ -67,7 +73,7 @@ async function runTextExtraction(id: string, buffer: Buffer): Promise<void> {
     }
     await db.update(pdf).set({ status: "text_ready" }).where(eq(pdf.id, id));
     // Log the quality report so extraction performance accumulates during dev.
-    const report = await getExtractionReport(id);
+    const report = await getExtractionReport(id, userId);
     console.info(`[extract] pdf=${id} report=${JSON.stringify(report)}`);
   } catch (err) {
     console.error(`[extract] pdf=${id} failed:`, err);
@@ -82,6 +88,7 @@ async function runTextExtraction(id: string, buffer: Buffer): Promise<void> {
 /** PDF metadata + processing status, for the web client's progress polling. */
 export async function getPdfStatus(
   id: string,
+  userId: string,
 ): Promise<{ id: string; filename: string; pageCount: number; status: string } | undefined> {
   const [row] = await db
     .select({
@@ -91,9 +98,33 @@ export async function getPdfStatus(
       status: pdf.status,
     })
     .from(pdf)
-    .where(eq(pdf.id, id))
+    .where(and(eq(pdf.id, id), eq(pdf.userId, userId)))
     .limit(1);
   return row;
+}
+
+/** The caller's PDFs, newest first — the "my documents" list. */
+export async function listPdfs(userId: string): Promise<PdfListResponse> {
+  const rows = await db
+    .select({
+      id: pdf.id,
+      filename: pdf.filename,
+      pageCount: pdf.pageCount,
+      status: pdf.status,
+      createdAt: pdf.createdAt,
+    })
+    .from(pdf)
+    .where(eq(pdf.userId, userId))
+    .orderBy(desc(pdf.createdAt));
+  return {
+    pdfs: rows.map((r) => ({
+      ...r,
+      // `pdf.status` is a plain text column (typed `string`); the route
+      // re-validates the payload against PdfStatusSchema via `.parse()`.
+      status: r.status as PdfListItem["status"],
+      createdAt: r.createdAt.toISOString(),
+    })),
+  };
 }
 
 /** Extracted text for a single 1-indexed page, if it has been extracted yet. */
@@ -120,11 +151,14 @@ export async function getPageText(
  * recommendation is a threshold-based gauge of whether OCR/LLM fallback is worth
  * considering. Returns undefined if the PDF does not exist.
  */
-export async function getExtractionReport(id: string): Promise<ExtractionReport | undefined> {
+export async function getExtractionReport(
+  id: string,
+  userId: string,
+): Promise<ExtractionReport | undefined> {
   const [meta] = await db
     .select({ pageCount: pdf.pageCount })
     .from(pdf)
-    .where(eq(pdf.id, id))
+    .where(and(eq(pdf.id, id), eq(pdf.userId, userId)))
     .limit(1);
   if (!meta) return undefined;
 
@@ -179,11 +213,14 @@ export async function getExtractionReport(id: string): Promise<ExtractionReport 
  * Look up a PDF's metadata for existence + page-range checks. Deliberately does
  * not read the (large) `bytes` column — that is only loaded on a render miss.
  */
-export async function getPdf(id: string): Promise<{ pageCount: number } | undefined> {
+export async function getPdf(
+  id: string,
+  userId: string,
+): Promise<{ pageCount: number } | undefined> {
   const [row] = await db
     .select({ pageCount: pdf.pageCount })
     .from(pdf)
-    .where(eq(pdf.id, id))
+    .where(and(eq(pdf.id, id), eq(pdf.userId, userId)))
     .limit(1);
   return row;
 }
