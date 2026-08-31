@@ -89,131 +89,6 @@ export const ExtractionReportSchema = z.object({
 
 export type ExtractionReport = z.infer<typeof ExtractionReportSchema>;
 
-/** Request body for `POST /pdf/:id/ask` — a question about the PDF's content. */
-export const AskRequestSchema = z.object({
-  question: z.string().min(1).max(2000),
-});
-
-export type AskRequest = z.infer<typeof AskRequestSchema>;
-
-/**
- * Response for `POST /pdf/:id/ask`. `citedPages` are the 1-indexed pages the
- * answer is grounded in — the quality probe's core signal (citation accuracy
- * is measured against them). `usage` feeds the running cost measurement.
- */
-export const AskResponseSchema = z.object({
-  answer: z.string(),
-  citedPages: z.array(z.number().int().positive()),
-  model: z.string(),
-  usage: z.object({
-    inputTokens: z.number().int().nonnegative(),
-    outputTokens: z.number().int().nonnegative(),
-  }),
-});
-
-export type AskResponse = z.infer<typeof AskResponseSchema>;
-
-/** Request body for `POST /pdf/:id/quiz` — how many MCQ questions to generate. */
-export const QuizGenerateRequestSchema = z.object({
-  count: z.number().int().min(1).max(10).default(5),
-});
-
-export type QuizGenerateRequest = z.infer<typeof QuizGenerateRequestSchema>;
-
-/**
- * A single generated multiple-choice question, as exposed to the quiz-taking
- * client. `sourcePageIds` are the 1-indexed pages the question/answer is
- * grounded in (the citation-accuracy signal, same idea as
- * `AskResponse.citedPages`). Grading is server-side (slice 5): `answerIndex`
- * and `explanation` are withheld here and only revealed per-question via
- * `POST /pdf/:id/quiz/submit`.
- */
-export const QuizQuestionSchema = z.object({
-  id: z.string(),
-  type: z.literal("mcq"),
-  question: z.string(),
-  choices: z.array(z.string()).length(4),
-  sourcePageIds: z.array(z.number().int().positive()),
-  difficulty: z.string(),
-});
-
-export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
-
-/** Response for `POST /pdf/:id/quiz`. `usage` feeds the running cost measurement. */
-export const QuizGenerateResponseSchema = z.object({
-  questions: z.array(QuizQuestionSchema),
-  model: z.string(),
-  usage: z.object({
-    inputTokens: z.number().int().nonnegative(),
-    outputTokens: z.number().int().nonnegative(),
-  }),
-});
-
-export type QuizGenerateResponse = z.infer<typeof QuizGenerateResponseSchema>;
-
-/** Response for `GET /pdf/:id/quiz` — the previously generated questions for a PDF. */
-export const QuizListResponseSchema = z.object({
-  questions: z.array(QuizQuestionSchema),
-});
-
-export type QuizListResponse = z.infer<typeof QuizListResponseSchema>;
-
-/** Request body for `POST /pdf/:id/quiz/submit` — the answers being graded. */
-export const QuizSubmitRequestSchema = z.object({
-  answers: z
-    .array(
-      z.object({
-        questionId: z.string(),
-        choiceIndex: z.number().int().min(0).max(3),
-      }),
-    )
-    .min(1),
-});
-
-export type QuizSubmitRequest = z.infer<typeof QuizSubmitRequestSchema>;
-
-/** A single graded result item returned by `POST /pdf/:id/quiz/submit`. */
-export const QuizResultItemSchema = z.object({
-  questionId: z.string(),
-  choiceIndex: z.number().int(),
-  correctIndex: z.number().int(),
-  isCorrect: z.boolean(),
-  explanation: z.string(),
-  sourcePageIds: z.array(z.number().int().positive()),
-});
-
-export type QuizResultItem = z.infer<typeof QuizResultItemSchema>;
-
-/** Response for `POST /pdf/:id/quiz/submit` — grading results + score. */
-export const QuizSubmitResponseSchema = z.object({
-  results: z.array(QuizResultItemSchema),
-  correctCount: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
-});
-
-export type QuizSubmitResponse = z.infer<typeof QuizSubmitResponseSchema>;
-
-/** A single question's latest graded attempt, as returned by `GET /pdf/:id/quiz/attempts`. */
-export const QuizAttemptItemSchema = z.object({
-  questionId: z.string(),
-  question: z.string(),
-  choices: z.array(z.string()).length(4),
-  userAnswer: z.number().int(),
-  correctIndex: z.number().int(),
-  isCorrect: z.boolean(),
-  explanation: z.string(),
-  sourcePageIds: z.array(z.number().int().positive()),
-});
-
-export type QuizAttemptItem = z.infer<typeof QuizAttemptItemSchema>;
-
-/** Response for `GET /pdf/:id/quiz/attempts` — latest attempt per question, for restoring graded state. */
-export const QuizAttemptsResponseSchema = z.object({
-  items: z.array(QuizAttemptItemSchema),
-});
-
-export type QuizAttemptsResponse = z.infer<typeof QuizAttemptsResponseSchema>;
-
 /** Request body for `POST /pdf/:id/memos` — a user-authored study note. */
 export const MemoCreateRequestSchema = z.object({
   content: z.string().min(1).max(4000),
@@ -240,8 +115,8 @@ export const MemoListResponseSchema = z.object({
 
 export type MemoListResponse = z.infer<typeof MemoListResponseSchema>;
 
-/** A memo entry in the study log — `kind` discriminates it from a wrong-answer entry. */
-export const StudyLogMemoSchema = z.object({
+/** A single item in a PDF's study log — a user-authored memo. */
+export const StudyLogItemSchema = z.object({
   kind: z.literal("memo"),
   id: z.string(),
   pageNumber: z.number().int().positive().nullable(),
@@ -249,30 +124,9 @@ export const StudyLogMemoSchema = z.object({
   createdAt: z.string(),
 });
 
-export type StudyLogMemo = z.infer<typeof StudyLogMemoSchema>;
-
-/** A missed-quiz-question entry in the study log — `kind` discriminates it from a memo entry. */
-export const StudyLogWrongAnswerSchema = z.object({
-  kind: z.literal("wrong_answer"),
-  questionId: z.string(),
-  question: z.string(),
-  sourcePageIds: z.array(z.number().int().positive()),
-  userAnswerText: z.string(),
-  correctAnswerText: z.string(),
-  createdAt: z.string(),
-});
-
-export type StudyLogWrongAnswer = z.infer<typeof StudyLogWrongAnswerSchema>;
-
-/** A single item in a PDF's study log — either a memo or a missed quiz question. */
-export const StudyLogItemSchema = z.discriminatedUnion("kind", [
-  StudyLogMemoSchema,
-  StudyLogWrongAnswerSchema,
-]);
-
 export type StudyLogItem = z.infer<typeof StudyLogItemSchema>;
 
-/** Response for `GET /pdf/:id/study-log` — memos and missed questions, newest first. */
+/** Response for `GET /pdf/:id/study-log` — the PDF's memos, newest first. */
 export const StudyLogResponseSchema = z.object({
   items: z.array(StudyLogItemSchema),
 });

@@ -2,24 +2,16 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
-  AskResponseSchema,
   ExtractionReportSchema,
   MemoSchema,
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
-  QuizAttemptsResponseSchema,
-  QuizGenerateResponseSchema,
-  QuizListResponseSchema,
-  QuizSubmitResponseSchema,
   StudyLogResponseSchema,
-  type AskResponse,
   type ExtractionReport,
   type PageTextResponse,
   type PdfStatus,
   type PdfUploadResponse,
-  type QuizQuestion,
-  type QuizResultItem,
   type StudyLogItem,
 } from "@study-hack/shared";
 
@@ -47,19 +39,6 @@ export default function PdfStudio() {
   const [uploading, setUploading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [askQuestion, setAskQuestion] = useState("");
-  const [askLoading, setAskLoading] = useState(false);
-  const [askError, setAskError] = useState<string | null>(null);
-  const [askAnswer, setAskAnswer] = useState<AskResponse | null>(null);
-  const [quizLoading, setQuizLoading] = useState(false);
-  const [quizError, setQuizError] = useState<string | null>(null);
-  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
-  const [quizResults, setQuizResults] = useState<Record<string, QuizResultItem> | null>(null);
-  const [quizScore, setQuizScore] = useState<{ correctCount: number; total: number } | null>(null);
-  const [quizSubmitting, setQuizSubmitting] = useState(false);
-  const [retryWrongOnly, setRetryWrongOnly] = useState(false);
-  const [requizLoading, setRequizLoading] = useState(false);
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
@@ -125,56 +104,7 @@ export default function PdfStudio() {
     };
   }, [doc, status, page]);
 
-  // Once text is ready, restore a previously generated quiz + its graded
-  // state (if any) so a page reload doesn't lose progress. Never auto-generates.
-  useEffect(() => {
-    if (!doc || status !== "text_ready") return;
-    let active = true;
-    (async () => {
-      try {
-        const quizRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz`);
-        if (!quizRes.ok) return;
-        const quizParsed = QuizListResponseSchema.parse(await quizRes.json());
-        if (quizParsed.questions.length === 0) return;
-
-        const attemptsRes = await fetch(`${API_URL}/pdf/${doc.id}/quiz/attempts`);
-        const attemptsParsed = attemptsRes.ok
-          ? QuizAttemptsResponseSchema.parse(await attemptsRes.json())
-          : { items: [] };
-        if (!active) return;
-
-        setQuizQuestions(quizParsed.questions);
-        if (attemptsParsed.items.length > 0) {
-          const answers: Record<string, number> = {};
-          const results: Record<string, QuizResultItem> = {};
-          for (const item of attemptsParsed.items) {
-            answers[item.questionId] = item.userAnswer;
-            results[item.questionId] = {
-              questionId: item.questionId,
-              choiceIndex: item.userAnswer,
-              correctIndex: item.correctIndex,
-              isCorrect: item.isCorrect,
-              explanation: item.explanation,
-              sourcePageIds: item.sourcePageIds,
-            };
-          }
-          setQuizAnswers(answers);
-          setQuizResults(results);
-          setQuizScore({
-            correctCount: attemptsParsed.items.filter((item) => item.isCorrect).length,
-            total: attemptsParsed.items.length,
-          });
-        }
-      } catch {
-        // leave quiz state empty; user can generate one manually
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [doc, status]);
-
-  // Once text is ready, load the study log (memos + missed questions).
+  // Once text is ready, load the study log (the PDF's memos).
   useEffect(() => {
     if (!doc || status !== "text_ready") return;
     let active = true;
@@ -276,145 +206,6 @@ export default function PdfStudio() {
     }
   }
 
-  async function submitAsk() {
-    if (!doc || !askQuestion.trim() || askLoading) return;
-    setAskLoading(true);
-    setAskError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: askQuestion.trim() }),
-      });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `ask failed (${res.status})`);
-      }
-      // Validate the inbound payload at the boundary before trusting it.
-      const parsed = AskResponseSchema.parse(await res.json());
-      setAskAnswer(parsed);
-    } catch (err) {
-      setAskError(err instanceof Error ? err.message : "ask failed");
-    } finally {
-      setAskLoading(false);
-    }
-  }
-
-  async function generateQuiz() {
-    if (!doc || quizLoading) return;
-    setQuizLoading(true);
-    setQuizError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: 5 }),
-      });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `quiz generation failed (${res.status})`);
-      }
-      // Validate the inbound payload at the boundary before trusting it.
-      const parsed = QuizGenerateResponseSchema.parse(await res.json());
-      setQuizQuestions(parsed.questions);
-      setQuizAnswers({});
-      setQuizResults(null);
-      setQuizScore(null);
-      setRetryWrongOnly(false);
-    } catch (err) {
-      setQuizError(err instanceof Error ? err.message : "quiz generation failed");
-    } finally {
-      setQuizLoading(false);
-    }
-  }
-
-  function selectQuizChoice(questionId: string, choiceIndex: number) {
-    if (quizResults?.[questionId]) return;
-    setQuizAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
-  }
-
-  async function submitQuiz() {
-    if (!doc || quizSubmitting) return;
-    const targets = quizQuestions.filter(
-      (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
-    );
-    if (targets.length === 0) return;
-    setQuizSubmitting(true);
-    setQuizError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          answers: targets.map((q) => ({ questionId: q.id, choiceIndex: quizAnswers[q.id] })),
-        }),
-      });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `quiz grading failed (${res.status})`);
-      }
-      // Validate the inbound payload at the boundary before trusting it.
-      const parsed = QuizSubmitResponseSchema.parse(await res.json());
-      const merged = { ...(quizResults ?? {}) };
-      for (const result of parsed.results) merged[result.questionId] = result;
-      const graded = Object.values(merged);
-      setQuizResults(merged);
-      setQuizScore({
-        correctCount: graded.filter((r) => r.isCorrect).length,
-        total: graded.length,
-      });
-      setRetryWrongOnly(false);
-    } catch (err) {
-      setQuizError(err instanceof Error ? err.message : "quiz grading failed");
-    } finally {
-      setQuizSubmitting(false);
-    }
-  }
-
-  function retryWrong() {
-    if (!quizResults) return;
-    const wrongIds = Object.values(quizResults)
-      .filter((r) => !r.isCorrect)
-      .map((r) => r.questionId);
-    if (wrongIds.length === 0) return;
-    setRetryWrongOnly(true);
-    setQuizResults((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev };
-      for (const id of wrongIds) delete next[id];
-      return next;
-    });
-    setQuizAnswers((prev) => {
-      const next = { ...prev };
-      for (const id of wrongIds) delete next[id];
-      return next;
-    });
-  }
-
-  async function generateRequiz() {
-    if (!doc || requizLoading) return;
-    setRequizLoading(true);
-    setQuizError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/quiz/requiz`, { method: "POST" });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `re-quiz generation failed (${res.status})`);
-      }
-      // Validate the inbound payload at the boundary before trusting it.
-      const parsed = QuizGenerateResponseSchema.parse(await res.json());
-      setQuizQuestions(parsed.questions);
-      setQuizAnswers({});
-      setQuizResults(null);
-      setQuizScore(null);
-      setRetryWrongOnly(false);
-    } catch (err) {
-      setQuizError(err instanceof Error ? err.message : "re-quiz generation failed");
-    } finally {
-      setRequizLoading(false);
-    }
-  }
-
   function go(target: number) {
     if (!doc) return;
     const clamped = Math.min(Math.max(target, 1), doc.pageCount);
@@ -431,19 +222,6 @@ export default function PdfStudio() {
     setPageText(null);
     setPage(1);
     setError(null);
-    setAskQuestion("");
-    setAskLoading(false);
-    setAskError(null);
-    setAskAnswer(null);
-    setQuizLoading(false);
-    setQuizError(null);
-    setQuizQuestions([]);
-    setQuizAnswers({});
-    setQuizResults(null);
-    setQuizScore(null);
-    setQuizSubmitting(false);
-    setRetryWrongOnly(false);
-    setRequizLoading(false);
     setMemoDraft("");
     setMemoSaving(false);
     setStudyLog([]);
@@ -490,127 +268,6 @@ export default function PdfStudio() {
       {report ? <ExtractionReportPanel report={report} /> : null}
 
       {status === "text_ready" ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              value={askQuestion}
-              onChange={(e) => setAskQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitAsk();
-              }}
-              disabled={askLoading}
-              placeholder="Ask a question about this PDF…"
-              className="flex-1 rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => void submitAsk()}
-              disabled={askLoading || !askQuestion.trim()}
-              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {askLoading ? "Thinking…" : "Ask"}
-            </button>
-          </div>
-          {askLoading ? (
-            <p className="text-sm text-[#807d72]">Thinking…</p>
-          ) : askError ? (
-            <p className="text-sm text-[#cf2d56]">{askError}</p>
-          ) : askAnswer ? (
-            <div className="flex flex-col gap-2">
-              <p className="whitespace-pre-wrap text-sm text-[#26251e]">{askAnswer.answer}</p>
-              {askAnswer.citedPages.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {askAnswer.citedPages.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => go(n)}
-                      className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                    >
-                      p.{n}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-[#807d72]">No supporting pages cited.</p>
-              )}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {status === "text_ready" ? (
-        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-[#5a5852]">
-              {quizScore
-                ? `Score: ${quizScore.correctCount} / ${quizScore.total}`
-                : "Test yourself with a generated quiz."}
-            </p>
-            <button
-              type="button"
-              onClick={() => void generateQuiz()}
-              disabled={quizLoading}
-              className="shrink-0 rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {quizLoading ? "Generating…" : "Generate quiz"}
-            </button>
-          </div>
-          {quizError ? <p className="text-sm text-[#cf2d56]">{quizError}</p> : null}
-          {quizQuestions.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {quizQuestions.map((q, i) => (
-                <QuizQuestionCard
-                  key={q.id}
-                  index={i}
-                  question={q}
-                  selected={quizAnswers[q.id]}
-                  result={quizResults?.[q.id] ?? null}
-                  onSelect={(choiceIndex) => selectQuizChoice(q.id, choiceIndex)}
-                  onGoToPage={go}
-                />
-              ))}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void submitQuiz()}
-                  disabled={
-                    quizSubmitting ||
-                    !quizQuestions.some(
-                      (q) => quizAnswers[q.id] !== undefined && !quizResults?.[q.id],
-                    )
-                  }
-                  className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {quizSubmitting ? "Grading…" : retryWrongOnly ? "Submit retry" : "Submit"}
-                </button>
-                {quizResults && Object.values(quizResults).some((r) => !r.isCorrect) ? (
-                  <button
-                    type="button"
-                    onClick={retryWrong}
-                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                  >
-                    Retry wrong answers
-                  </button>
-                ) : null}
-                {quizScore && Object.values(quizResults ?? {}).some((r) => !r.isCorrect) ? (
-                  <button
-                    type="button"
-                    onClick={() => void generateRequiz()}
-                    disabled={requizLoading}
-                    className="w-fit rounded-md border border-[#cfcdc4] px-4 py-2 text-sm text-[#26251e] transition-colors hover:bg-[#efeee8] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {requizLoading ? "Generating review…" : "Retry weak areas"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {status === "text_ready" ? (
         <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
           <div className="flex flex-col gap-2">
             <textarea
@@ -635,68 +292,39 @@ export default function PdfStudio() {
 
           {studyLog.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {studyLog.map((item) =>
-                item.kind === "memo" ? (
-                  <div
-                    key={`memo-${item.id}`}
-                    className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-                        Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void deleteMemoItem(item.id)}
-                        aria-label="Delete note"
-                        className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
-                    {item.pageNumber !== null ? (
-                      <button
-                        type="button"
-                        onClick={() => go(item.pageNumber as number)}
-                        className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                      >
-                        p.{item.pageNumber}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div
-                    key={`wrong-${item.questionId}`}
-                    className="flex flex-col gap-2 rounded-xl border border-[#f3c3d0] bg-[#fbe6ec] p-3"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#cf2d56]">
-                      Missed question
+              {studyLog.map((item) => (
+                <div
+                  key={`memo-${item.id}`}
+                  className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+                      Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
                     </span>
-                    <p className="text-sm text-[#26251e]">{item.question}</p>
-                    <p className="text-sm text-[#5a5852]">
-                      Your answer: {item.userAnswerText} / Correct: {item.correctAnswerText}
-                    </p>
-                    {item.sourcePageIds.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {item.sourcePageIds.map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => go(n)}
-                            className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                          >
-                            p.{n}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void deleteMemoItem(item.id)}
+                      aria-label="Delete note"
+                      className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
+                    >
+                      ×
+                    </button>
                   </div>
-                ),
-              )}
+                  <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
+                  {item.pageNumber !== null ? (
+                    <button
+                      type="button"
+                      onClick={() => go(item.pageNumber as number)}
+                      className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
+                    >
+                      p.{item.pageNumber}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
             </div>
           ) : (
-            <p className="text-sm text-[#807d72]">No notes or missed questions yet.</p>
+            <p className="text-sm text-[#807d72]">No notes yet.</p>
           )}
         </div>
       ) : null}
@@ -792,76 +420,6 @@ function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
       >
         {RECOMMENDATION_LABEL[report.recommendation]}
       </span>
-    </div>
-  );
-}
-
-function QuizQuestionCard({
-  index,
-  question,
-  selected,
-  result,
-  onSelect,
-  onGoToPage,
-}: {
-  index: number;
-  question: QuizQuestion;
-  selected: number | undefined;
-  result: QuizResultItem | null;
-  onSelect: (choiceIndex: number) => void;
-  onGoToPage: (n: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-[#e6e5e0] p-4">
-      <p className="text-sm text-[#26251e]">
-        {index + 1}. {question.question}
-      </p>
-      <div className="flex flex-col gap-2">
-        {question.choices.map((choice, choiceIndex) => {
-          const isSelected = selected === choiceIndex;
-          const isCorrectChoice = result !== null && choiceIndex === result.correctIndex;
-          const isWrongSelected =
-            result !== null && isSelected && choiceIndex !== result.correctIndex;
-          let tone = "border-[#cfcdc4] text-[#26251e]";
-          if (isCorrectChoice) {
-            tone = "border-[#1f8a65] bg-[#e6f4ee] text-[#1f8a65]";
-          } else if (isWrongSelected) {
-            tone = "border-[#cf2d56] bg-[#fbe6ec] text-[#cf2d56]";
-          } else if (isSelected) {
-            tone = "border-[#f54e00] bg-[#fdece4] text-[#26251e]";
-          }
-          return (
-            <button
-              key={choiceIndex}
-              type="button"
-              onClick={() => onSelect(choiceIndex)}
-              disabled={result !== null}
-              className={`rounded-md border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed ${tone}`}
-            >
-              {choice}
-            </button>
-          );
-        })}
-      </div>
-      {result ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm text-[#5a5852]">{result.explanation}</p>
-          {result.sourcePageIds.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {result.sourcePageIds.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => onGoToPage(n)}
-                  className="rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                >
-                  p.{n}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -3,8 +3,6 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import {
-  AskRequestSchema,
-  AskResponseSchema,
   ExtractionReportSchema,
   HealthResponseSchema,
   MemoCreateRequestSchema,
@@ -13,16 +11,8 @@ import {
   PageTextResponseSchema,
   PdfStatusResponseSchema,
   PdfUploadResponseSchema,
-  QuizAttemptsResponseSchema,
-  QuizGenerateRequestSchema,
-  QuizGenerateResponseSchema,
-  QuizListResponseSchema,
-  QuizSubmitRequestSchema,
-  QuizSubmitResponseSchema,
   StudyLogResponseSchema,
 } from "@study-hack/shared";
-import { askPdf } from "./ask.js";
-import { LlmError } from "./llm.js";
 import { createMemo, deleteMemo, getStudyLog, listMemos } from "./memo.js";
 import {
   addPdf,
@@ -32,7 +22,6 @@ import {
   getPdfStatus,
   renderPage,
 } from "./pdfStore.js";
-import { generateQuiz, generateRequiz, gradeSubmission, listAttempts, listQuiz } from "./quiz.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -118,145 +107,6 @@ app.get("/pdf/:id/extraction-report", async (req, res) => {
   res.json(payload);
 });
 
-// Full-context Q&A over the PDF's extracted text (quality probe — small PDFs only).
-app.post("/pdf/:id/ask", async (req, res) => {
-  let body;
-  try {
-    body = AskRequestSchema.parse(req.body);
-  } catch {
-    res.status(400).json({ error: "invalid request body" });
-    return;
-  }
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  try {
-    const result = await askPdf(req.params.id, body.question);
-    // Validate the outbound payload at the boundary before returning it.
-    res.json(AskResponseSchema.parse(result));
-  } catch (err) {
-    if (err instanceof LlmError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error(`[ask] pdf=${req.params.id} failed:`, err);
-    res.status(502).json({ error: "ask failed" });
-  }
-});
-
-// Generate MCQ quiz questions grounded in the PDF's extracted text (page citations).
-app.post("/pdf/:id/quiz", async (req, res) => {
-  let body;
-  try {
-    body = QuizGenerateRequestSchema.parse(req.body);
-  } catch {
-    res.status(400).json({ error: "invalid request body" });
-    return;
-  }
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  if (status.status !== "text_ready") {
-    res.status(409).json({ error: "page text is not ready for this PDF" });
-    return;
-  }
-  try {
-    const result = await generateQuiz(req.params.id, body.count);
-    // Validate the outbound payload at the boundary before returning it.
-    res.json(QuizGenerateResponseSchema.parse(result));
-  } catch (err) {
-    if (err instanceof LlmError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error(`[quiz] pdf=${req.params.id} failed:`, err);
-    res.status(502).json({ error: "quiz generation failed" });
-  }
-});
-
-// Previously generated quiz questions for a PDF. Answers are withheld —
-// grading happens server-side via POST /pdf/:id/quiz/submit (slice 5).
-app.get("/pdf/:id/quiz", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  const result = await listQuiz(req.params.id);
-  res.json(QuizListResponseSchema.parse(result));
-});
-
-// Grade a set of submitted quiz answers server-side and reveal the correct
-// answer + explanation only for the submitted questions.
-app.post("/pdf/:id/quiz/submit", async (req, res) => {
-  let body;
-  try {
-    body = QuizSubmitRequestSchema.parse(req.body);
-  } catch {
-    res.status(400).json({ error: "invalid request body" });
-    return;
-  }
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  try {
-    const result = await gradeSubmission(req.params.id, body.answers);
-    // Validate the outbound payload at the boundary before returning it.
-    res.json(QuizSubmitResponseSchema.parse(result));
-  } catch (err) {
-    if (err instanceof LlmError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error(`[grade] pdf=${req.params.id} failed:`, err);
-    res.status(502).json({ error: "grading failed" });
-  }
-});
-
-// Weakness-based re-quiz: generate new questions covering the same concepts
-// as the learner's most recently missed questions, closing the study loop.
-app.post("/pdf/:id/quiz/requiz", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  if (status.status !== "text_ready") {
-    res.status(409).json({ error: "page text is not ready for this PDF" });
-    return;
-  }
-  try {
-    const result = await generateRequiz(req.params.id);
-    // Validate the outbound payload at the boundary before returning it.
-    res.json(QuizGenerateResponseSchema.parse(result));
-  } catch (err) {
-    if (err instanceof LlmError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error(`[requiz] pdf=${req.params.id} failed:`, err);
-    res.status(502).json({ error: "re-quiz failed" });
-  }
-});
-
-// Latest graded attempt per question for a PDF's quiz, so the client can
-// restore prior graded state (e.g. after a page reload).
-app.get("/pdf/:id/quiz/attempts", async (req, res) => {
-  const status = await getPdfStatus(req.params.id);
-  if (!status) {
-    res.status(404).json({ error: "pdf not found" });
-    return;
-  }
-  const result = await listAttempts(req.params.id);
-  res.json(QuizAttemptsResponseSchema.parse(result));
-});
-
 // Create a user-authored memo for a PDF, optionally attached to a viewer page.
 app.post("/pdf/:id/memos", async (req, res) => {
   let body;
@@ -307,7 +157,7 @@ app.delete("/pdf/:id/memos/:memoId", async (req, res) => {
   res.status(204).end();
 });
 
-// Study log: memos and previously-missed quiz questions, newest first.
+// Study log: the PDF's memos, newest first.
 app.get("/pdf/:id/study-log", async (req, res) => {
   const status = await getPdfStatus(req.params.id);
   if (!status) {
