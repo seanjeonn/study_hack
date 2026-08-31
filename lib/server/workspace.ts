@@ -137,12 +137,31 @@ export async function atomicWrite(filePath: string, data: string | Buffer): Prom
 }
 
 /**
+ * Create the workspace root, seeding a `.gitignore` that excludes the
+ * app-owned `.cache/` directories. Tracking the workspace in git is a first
+ * class use of it, and the cache is rebuildable derived data that would
+ * otherwise be committed alongside the user's notes. Never overwrites an
+ * existing file — from that point the .gitignore is the user's.
+ */
+async function ensureWorkspaceRoot(): Promise<void> {
+  await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
+  const gitignore = path.join(WORKSPACE_ROOT, ".gitignore");
+  try {
+    await fs.writeFile(gitignore, "# Rebuilt from source.pdf on demand.\n.cache/\n", {
+      flag: "wx",
+    });
+  } catch {
+    // Already there — leave it alone.
+  }
+}
+
+/**
  * Claim a fresh directory for `slug`, suffixing `-2`, `-3`, … on collision.
  * `mkdir` without `recursive` fails with EEXIST if the name is taken, so the
  * claim is atomic — an existing PDF directory is never overwritten.
  */
 export async function claimPdfDir(slug: string): Promise<string> {
-  await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
+  await ensureWorkspaceRoot();
   for (let n = 1; ; n++) {
     const candidate = n === 1 ? slug : `${slug}-${n}`.slice(0, 100).replace(/-+$/, "");
     try {
