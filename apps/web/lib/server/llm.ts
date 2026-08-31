@@ -1,3 +1,5 @@
+import "server-only";
+
 import OpenAI from "openai";
 
 export const MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";

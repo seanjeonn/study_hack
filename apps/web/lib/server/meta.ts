@@ -1,9 +1,11 @@
+import "server-only";
+
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { ExtractionReportSchema, type ExtractionReport } from "@study-hack/shared";
-import { countSuspiciousChars, extractPdfText, type PageText } from "./textExtract.js";
-import { atomicWrite, cacheDir, metaPath, pageTextPath, sourcePath } from "./workspace.js";
+import { ExtractionReportSchema, type ExtractionReport } from "@/lib/schemas";
+import { countSuspiciousChars, extractPdfText, type PageText } from "@/lib/server/textExtract";
+import { atomicWrite, cacheDir, metaPath, pageTextPath, sourcePath } from "@/lib/server/workspace";
 
 // Thresholds for the extraction-quality recommendation. Tuned against real
 // course PDFs (clean English/math decks vs. one with garbled CID text) — they

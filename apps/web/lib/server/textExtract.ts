@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createRequire } from "node:module";
 import path from "node:path";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -5,7 +7,13 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 // Resolve pdfjs-dist's bundled cMap and standard-font assets by absolute path.
 // These are required for correct CJK (Korean) text extraction — without the
 // cMaps, characters from CID-keyed fonts decode to replacement chars (U+FFFD).
-const require = createRequire(import.meta.url);
+//
+// The require is anchored at the project root rather than `import.meta.url`:
+// Turbopack rewrites module ids, so `createRequire(import.meta.url).resolve()`
+// returns an internal identifier like "[externals]/pdfjs-dist/..." instead of
+// a real path, and the cMap directory silently fails to load. Anchoring at cwd
+// keeps it a genuine filesystem resolution.
+const require = createRequire(path.join(process.cwd(), "package.json"));
 const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
 const CMAP_URL = path.join(pdfjsRoot, "cmaps") + path.sep;
 const STANDARD_FONT_DATA_URL = path.join(pdfjsRoot, "standard_fonts") + path.sep;

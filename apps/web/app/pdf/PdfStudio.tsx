@@ -2,16 +2,14 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
-  ExtractionReportSchema,
   PageNoteResponseSchema,
   PageTextResponseSchema,
+  PdfDetailResponseSchema,
   PdfSummarySchema,
   type ExtractionReport,
   type PageTextResponse,
   type PdfSummary,
-} from "@study-hack/shared";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+} from "@/lib/schemas";
 
 const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> = {
   ok: "Extraction quality looks good",
@@ -37,10 +35,10 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/extraction-report`);
+        const res = await fetch(`/api/pdfs/${doc.id}`);
         if (!res.ok) return;
-        const parsed = ExtractionReportSchema.parse(await res.json());
-        if (active) setReport(parsed);
+        const parsed = PdfDetailResponseSchema.parse(await res.json());
+        if (active) setReport(parsed.extraction);
       } catch {
         // leave report null; panel just won't show
       }
@@ -56,7 +54,7 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/text`);
+        const res = await fetch(`/api/pdfs/${doc.id}/pages/${page}/text`);
         if (!res.ok) return;
         const parsed = PageTextResponseSchema.parse(await res.json());
         if (active) setPageText(parsed);
@@ -76,7 +74,7 @@ export default function PdfStudio() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/note`);
+        const res = await fetch(`/api/pdfs/${doc.id}/pages/${page}/note`);
         if (!res.ok) return;
         const parsed = PageNoteResponseSchema.parse(await res.json());
         if (active) setNote(parsed.content);
@@ -94,7 +92,7 @@ export default function PdfStudio() {
     setNoteSaving(true);
     setNoteError(null);
     try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/note`, {
+      const res = await fetch(`/api/pdfs/${doc.id}/pages/${page}/note`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: note }),
@@ -120,7 +118,7 @@ export default function PdfStudio() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`${API_URL}/pdf`, { method: "POST", body });
+      const res = await fetch("/api/pdfs", { method: "POST", body });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `upload failed (${res.status})`);
@@ -232,7 +230,7 @@ export default function PdfStudio() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={page}
-            src={`${API_URL}/pdf/${doc.id}/pages/${page}`}
+            src={`/api/pdfs/${doc.id}/pages/${page}`}
             alt={`${doc.filename} — page ${page}`}
             onLoad={() => setPageLoading(false)}
             className="max-w-full"

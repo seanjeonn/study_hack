@@ -1,5 +1,7 @@
+import "server-only";
+
 import fs from "node:fs/promises";
-import { atomicWrite, pageNotePath } from "./workspace.js";
+import { atomicWrite, pageNotePath } from "@/lib/server/workspace";
 
 /**
  * Per-page user notes: one editable markdown file per page

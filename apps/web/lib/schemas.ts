@@ -1,17 +1,10 @@
 import { z } from "zod";
 
 /**
- * Shared zod schemas + inferred types — the single source of truth (SSOT)
- * consumed by both `apps/web` and `apps/api`.
+ * Wire schemas + inferred types — the single source of truth for every HTTP
+ * boundary in the app. Safe to import from client components: this module is
+ * pure zod, with no node-only code (that lives in `lib/server/`).
  */
-export const HealthResponseSchema = z.object({
-  status: z.literal("ok"),
-  service: z.string(),
-  time: z.string(),
-});
-
-export type HealthResponse = z.infer<typeof HealthResponseSchema>;
-
 /**
  * A PDF in the workspace. `id` is the directory name (a slug derived from the
  * filename) and doubles as the URL segment. The page images themselves are
@@ -26,14 +19,14 @@ export const PdfSummarySchema = z.object({
 
 export type PdfSummary = z.infer<typeof PdfSummarySchema>;
 
-/** Response for `GET /pdfs` — every PDF in the workspace, newest first. */
+/** Response for `GET /api/pdfs` — every PDF in the workspace, newest first. */
 export const PdfListResponseSchema = z.object({
   pdfs: z.array(PdfSummarySchema),
 });
 
 export type PdfListResponse = z.infer<typeof PdfListResponseSchema>;
 
-/** Response for `GET /pdf/:id/pages/:n/text` — a single page's extracted text. */
+/** Response for `GET /api/pdfs/[id]/pages/[n]/text` — a single page's extracted text. */
 export const PageTextResponseSchema = z.object({
   pageNumber: z.number().int().positive(),
   text: z.string(),
@@ -55,7 +48,7 @@ export const ExtractionRecommendationSchema = z.enum(["ok", "consider_ocr", "con
 export type ExtractionRecommendation = z.infer<typeof ExtractionRecommendationSchema>;
 
 /**
- * Response for `GET /pdf/:id/extraction-report` — an objective quality gauge for
+ * Response for `GET /api/pdfs/[id]` — an objective quality gauge for
  * extracted text so the OCR-vs-LLM decision is made from data, not vibes. Ratios
  * are in 0..1. Semantic correctness is NOT captured here (needs human review).
  */
@@ -79,7 +72,7 @@ export const ExtractionReportSchema = z.object({
 export type ExtractionReport = z.infer<typeof ExtractionReportSchema>;
 
 /**
- * Response for `GET /pdf/:id/pages/:n/note` — the user's note for one page, as
+ * Response for `GET /api/pdfs/[id]/pages/[n]/note` — the user's note for one page, as
  * plain markdown. An empty string means the page has no note file yet.
  */
 export const PageNoteResponseSchema = z.object({
@@ -89,9 +82,17 @@ export const PageNoteResponseSchema = z.object({
 
 export type PageNoteResponse = z.infer<typeof PageNoteResponseSchema>;
 
-/** Request body for `PUT /pdf/:id/pages/:n/note`. */
+/** Request body for `PUT /api/pdfs/[id]/pages/[n]/note`. */
 export const PageNoteUpdateRequestSchema = z.object({
   content: z.string().max(100_000),
 });
 
 export type PageNoteUpdateRequest = z.infer<typeof PageNoteUpdateRequestSchema>;
+
+/** Response for `GET /api/pdfs/[id]` — a PDF's summary plus its extraction report. */
+export const PdfDetailResponseSchema = z.object({
+  summary: PdfSummarySchema,
+  extraction: ExtractionReportSchema,
+});
+
+export type PdfDetailResponse = z.infer<typeof PdfDetailResponseSchema>;

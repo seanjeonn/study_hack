@@ -1,8 +1,17 @@
+import "server-only";
+
 import fs from "node:fs/promises";
 import { pdf as pdfRender } from "pdf-to-img";
-import type { ExtractionReport, PdfSummary } from "@study-hack/shared";
-import { indexPdf, readMeta, type PdfMeta } from "./meta.js";
-import { claimPdfDir, listPdfIds, pageTextPath, pdfDir, slugify, sourcePath } from "./workspace.js";
+import type { ExtractionReport, PdfSummary } from "@/lib/schemas";
+import { indexPdf, readMeta, type PdfMeta } from "@/lib/server/meta";
+import {
+  claimPdfDir,
+  listPdfIds,
+  pageTextPath,
+  pdfDir,
+  slugify,
+  sourcePath,
+} from "@/lib/server/workspace";
 
 type PdfDocument = Awaited<ReturnType<typeof pdfRender>>;
 
@@ -66,9 +75,12 @@ export async function getPdfSummary(id: string): Promise<PdfSummary | undefined>
   return meta ? toSummary(meta) : undefined;
 }
 
-export async function getExtractionReport(id: string): Promise<ExtractionReport | undefined> {
+/** A PDF's summary plus its extraction-quality report, for the reader page. */
+export async function getPdfDetail(
+  id: string,
+): Promise<{ summary: PdfSummary; extraction: ExtractionReport } | undefined> {
   const meta = await readMeta(id);
-  return meta?.extraction;
+  return meta ? { summary: toSummary(meta), extraction: meta.extraction } : undefined;
 }
 
 /** Extracted text for a single 1-indexed page. */
