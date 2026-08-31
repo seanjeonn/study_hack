@@ -22,5 +22,8 @@ npm-debug.log*
 coverage/
 *.tsbuildinfo
 
+# user data — PDFs, notes, and the app's derived cache
+workspace/
+
 # local-only tracking docs (roadmap / planning)
 docs/ROADMAP.md

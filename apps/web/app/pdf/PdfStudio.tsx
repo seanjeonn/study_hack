@@ -3,26 +3,15 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
   ExtractionReportSchema,
-  MemoSchema,
+  PageNoteResponseSchema,
   PageTextResponseSchema,
-  PdfStatusResponseSchema,
-  PdfUploadResponseSchema,
-  StudyLogResponseSchema,
+  PdfSummarySchema,
   type ExtractionReport,
   type PageTextResponse,
-  type PdfStatus,
-  type PdfUploadResponse,
-  type StudyLogItem,
+  type PdfSummary,
 } from "@study-hack/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-const STATUS_LABEL: Record<PdfStatus, string> = {
-  uploaded: "Waiting to extract text…",
-  processing: "Extracting text…",
-  text_ready: "Text ready",
-  failed: "Text extraction failed",
-};
 
 const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> = {
   ok: "Extraction quality looks good",
@@ -31,44 +20,20 @@ const RECOMMENDATION_LABEL: Record<ExtractionReport["recommendation"], string> =
 };
 
 export default function PdfStudio() {
-  const [doc, setDoc] = useState<PdfUploadResponse | null>(null);
-  const [status, setStatus] = useState<PdfStatus | null>(null);
+  const [doc, setDoc] = useState<PdfSummary | null>(null);
   const [report, setReport] = useState<ExtractionReport | null>(null);
   const [pageText, setPageText] = useState<PageTextResponse | null>(null);
   const [page, setPage] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [memoDraft, setMemoDraft] = useState("");
-  const [memoSaving, setMemoSaving] = useState(false);
-  const [studyLog, setStudyLog] = useState<StudyLogItem[]>([]);
-  const [studyLogError, setStudyLogError] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
-  // Poll processing status until extraction reaches a terminal state.
+  // Load the quality report (once per document).
   useEffect(() => {
-    if (!doc || status === "text_ready" || status === "failed") return;
-    let active = true;
-    const tick = async () => {
-      try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}`);
-        if (!res.ok) return;
-        const parsed = PdfStatusResponseSchema.parse(await res.json());
-        if (active) setStatus(parsed.status);
-      } catch {
-        // transient; next tick retries
-      }
-    };
-    void tick();
-    const interval = setInterval(tick, 1500);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [doc, status]);
-
-  // Once text is ready, load the quality report (once per document).
-  useEffect(() => {
-    if (!doc || status !== "text_ready" || report) return;
+    if (!doc) return;
     let active = true;
     (async () => {
       try {
@@ -83,11 +48,11 @@ export default function PdfStudio() {
     return () => {
       active = false;
     };
-  }, [doc, status, report]);
+  }, [doc]);
 
-  // Load the current page's extracted text whenever the page or readiness changes.
+  // Load the current page's extracted text whenever the page changes.
   useEffect(() => {
-    if (!doc || status !== "text_ready") return;
+    if (!doc) return;
     let active = true;
     (async () => {
       try {
@@ -102,78 +67,48 @@ export default function PdfStudio() {
     return () => {
       active = false;
     };
-  }, [doc, status, page]);
+  }, [doc, page]);
 
-  // Once text is ready, load the study log (the PDF's memos).
+  // Re-read the page's note from disk on every page move, so an edit made
+  // outside the app (Obsidian, an editor) is what the editor shows.
   useEffect(() => {
-    if (!doc || status !== "text_ready") return;
+    if (!doc) return;
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
+        const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/note`);
         if (!res.ok) return;
-        const parsed = StudyLogResponseSchema.parse(await res.json());
-        if (active) setStudyLog(parsed.items);
+        const parsed = PageNoteResponseSchema.parse(await res.json());
+        if (active) setNote(parsed.content);
       } catch {
-        // leave studyLog empty; panel just won't show entries
+        // leave the note empty; saving still works
       }
     })();
     return () => {
       active = false;
     };
-  }, [doc, status]);
+  }, [doc, page]);
 
-  // Re-fetch the study log after a memo is added or deleted (user-triggered,
-  // not tied to an effect, so no active-guard is needed here).
-  async function refreshStudyLog() {
-    if (!doc) return;
+  async function saveNote() {
+    if (!doc || noteSaving) return;
+    setNoteSaving(true);
+    setNoteError(null);
     try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/study-log`);
-      if (!res.ok) return;
-      const parsed = StudyLogResponseSchema.parse(await res.json());
-      setStudyLog(parsed.items);
-    } catch {
-      // leave the previous study log in place
-    }
-  }
-
-  async function submitMemo() {
-    if (!doc || !memoDraft.trim() || memoSaving) return;
-    setMemoSaving(true);
-    setStudyLogError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos`, {
-        method: "POST",
+      const res = await fetch(`${API_URL}/pdf/${doc.id}/pages/${page}/note`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: memoDraft.trim(), pageNumber: page }),
+        body: JSON.stringify({ content: note }),
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `failed to save note (${res.status})`);
       }
       // Validate the inbound payload at the boundary before trusting it.
-      MemoSchema.parse(await res.json());
-      setMemoDraft("");
-      await refreshStudyLog();
+      PageNoteResponseSchema.parse(await res.json());
     } catch (err) {
-      setStudyLogError(err instanceof Error ? err.message : "failed to save note");
+      setNoteError(err instanceof Error ? err.message : "failed to save note");
     } finally {
-      setMemoSaving(false);
-    }
-  }
-
-  async function deleteMemoItem(memoId: string) {
-    if (!doc) return;
-    setStudyLogError(null);
-    try {
-      const res = await fetch(`${API_URL}/pdf/${doc.id}/memos/${memoId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `failed to delete note (${res.status})`);
-      }
-      await refreshStudyLog();
-    } catch (err) {
-      setStudyLogError(err instanceof Error ? err.message : "failed to delete note");
+      setNoteSaving(false);
     }
   }
 
@@ -191,9 +126,8 @@ export default function PdfStudio() {
         throw new Error(payload?.error ?? `upload failed (${res.status})`);
       }
       // Validate the inbound payload at the boundary before trusting it.
-      const parsed = PdfUploadResponseSchema.parse(await res.json());
+      const parsed = PdfSummarySchema.parse(await res.json());
       setDoc(parsed);
-      setStatus("uploaded");
       setReport(null);
       setPageText(null);
       setPage(1);
@@ -217,15 +151,13 @@ export default function PdfStudio() {
 
   function reset() {
     setDoc(null);
-    setStatus(null);
     setReport(null);
     setPageText(null);
     setPage(1);
     setError(null);
-    setMemoDraft("");
-    setMemoSaving(false);
-    setStudyLog([]);
-    setStudyLogError(null);
+    setNote("");
+    setNoteSaving(false);
+    setNoteError(null);
   }
 
   if (!doc) {
@@ -233,7 +165,7 @@ export default function PdfStudio() {
       <section className="flex flex-col items-center gap-5 rounded-xl border border-[#e6e5e0] bg-white px-8 py-14 text-center">
         <p className="text-sm text-[#5a5852]">Choose a PDF file to get started.</p>
         <label className="cursor-pointer rounded-md bg-[#f54e00] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#d04200]">
-          {uploading ? "Uploading…" : "Select PDF"}
+          {uploading ? "Reading the PDF…" : "Select PDF"}
           <input
             type="file"
             accept="application/pdf"
@@ -242,6 +174,9 @@ export default function PdfStudio() {
             onChange={handleFile}
           />
         </label>
+        {uploading ? (
+          <p className="text-sm text-[#807d72]">Extracting text — this takes a moment.</p>
+        ) : null}
         {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
       </section>
     );
@@ -250,12 +185,9 @@ export default function PdfStudio() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <p className="truncate text-sm text-[#5a5852]" title={doc.filename}>
-            {doc.filename}
-          </p>
-          {status ? <StatusBadge status={status} /> : null}
-        </div>
+        <p className="truncate text-sm text-[#5a5852]" title={doc.filename}>
+          {doc.filename}
+        </p>
         <button
           type="button"
           onClick={reset}
@@ -267,67 +199,30 @@ export default function PdfStudio() {
 
       {report ? <ExtractionReportPanel report={report} /> : null}
 
-      {status === "text_ready" ? (
-        <div className="flex flex-col gap-4 rounded-xl border border-[#e6e5e0] bg-white p-4">
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={memoDraft}
-              onChange={(e) => setMemoDraft(e.target.value)}
-              disabled={memoSaving}
-              placeholder={`Add a note for page ${page}…`}
-              rows={3}
-              className="w-full resize-none rounded-md border border-[#cfcdc4] bg-white px-3 py-2 text-sm text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => void submitMemo()}
-              disabled={memoSaving || !memoDraft.trim()}
-              className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {memoSaving ? "Saving…" : "Add note"}
-            </button>
-          </div>
-
-          {studyLogError ? <p className="text-sm text-[#cf2d56]">{studyLogError}</p> : null}
-
-          {studyLog.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {studyLog.map((item) => (
-                <div
-                  key={`memo-${item.id}`}
-                  className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] p-3"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-                      Note{item.pageNumber !== null ? ` · p.${item.pageNumber}` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void deleteMemoItem(item.id)}
-                      aria-label="Delete note"
-                      className="text-sm text-[#807d72] transition-colors hover:text-[#cf2d56]"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-[#26251e]">{item.content}</p>
-                  {item.pageNumber !== null ? (
-                    <button
-                      type="button"
-                      onClick={() => go(item.pageNumber as number)}
-                      className="w-fit rounded-full border border-[#cfcdc4] px-2.5 py-0.5 text-xs text-[#26251e] transition-colors hover:bg-[#efeee8]"
-                    >
-                      p.{item.pageNumber}
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-[#807d72]">No notes yet.</p>
-          )}
+      <div className="flex flex-col gap-2 rounded-xl border border-[#e6e5e0] bg-white p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+          My note · page {page}
         </div>
-      ) : null}
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          disabled={noteSaving}
+          placeholder={`Write your note for page ${page}…`}
+          rows={6}
+          className="w-full resize-y rounded-md border border-[#cfcdc4] bg-white px-3 py-2 font-mono text-[13px] text-[#26251e] placeholder:text-[#a09c92] disabled:opacity-50"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void saveNote()}
+            disabled={noteSaving}
+            className="w-fit rounded-md bg-[#f54e00] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#d04200] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {noteSaving ? "Saving…" : "Save"}
+          </button>
+          {noteError ? <p className="text-sm text-[#cf2d56]">{noteError}</p> : null}
+        </div>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="relative flex min-h-[60vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4">
@@ -350,10 +245,7 @@ export default function PdfStudio() {
             Extracted text · page {page}
           </div>
           <div className="flex-1 overflow-auto p-4">
-            <PageTextPanel
-              status={status}
-              pageText={pageText?.pageNumber === page ? pageText : null}
-            />
+            <PageTextPanel pageText={pageText?.pageNumber === page ? pageText : null} />
           </div>
         </div>
       </div>
@@ -383,22 +275,6 @@ export default function PdfStudio() {
   );
 }
 
-function StatusBadge({ status }: { status: PdfStatus }) {
-  const tone =
-    status === "text_ready"
-      ? "bg-[#e6f4ee] text-[#1f8a65]"
-      : status === "failed"
-        ? "bg-[#fbe6ec] text-[#cf2d56]"
-        : "bg-[#efeee8] text-[#807d72]";
-  return (
-    <span
-      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.88px] ${tone}`}
-    >
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
 function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
   const tone =
     report.recommendation === "ok"
@@ -424,20 +300,7 @@ function ExtractionReportPanel({ report }: { report: ExtractionReport }) {
   );
 }
 
-function PageTextPanel({
-  status,
-  pageText,
-}: {
-  status: PdfStatus | null;
-  pageText: PageTextResponse | null;
-}) {
-  if (status !== "text_ready") {
-    return (
-      <p className="text-sm text-[#807d72]">
-        {status === "failed" ? "Text extraction failed." : "Extracting text…"}
-      </p>
-    );
-  }
+function PageTextPanel({ pageText }: { pageText: PageTextResponse | null }) {
   if (!pageText) {
     return <p className="text-sm text-[#807d72]">Loading this page&apos;s text…</p>;
   }

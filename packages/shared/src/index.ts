@@ -13,36 +13,25 @@ export const HealthResponseSchema = z.object({
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 
 /**
- * Response returned by `POST /pdf` after a PDF is uploaded and parsed.
- * The page images themselves are served as binary PNGs from
- * `GET /pdf/:id/pages/:n` (1-indexed) and are not part of this JSON payload.
+ * A PDF in the workspace. `id` is the directory name (a slug derived from the
+ * filename) and doubles as the URL segment. The page images themselves are
+ * served as binary PNGs from `/pages/:n` (1-indexed), not in this payload.
  */
-export const PdfUploadResponseSchema = z.object({
-  id: z.string(),
-  pageCount: z.number().int().positive(),
-  filename: z.string(),
-});
-
-export type PdfUploadResponse = z.infer<typeof PdfUploadResponseSchema>;
-
-/**
- * Processing lifecycle of an uploaded PDF. `uploaded` is the initial state set
- * on insert; text extraction runs in the background and moves it through
- * `processing` to `text_ready` (or `failed`).
- */
-export const PdfStatusSchema = z.enum(["uploaded", "processing", "text_ready", "failed"]);
-
-export type PdfStatus = z.infer<typeof PdfStatusSchema>;
-
-/** Response for `GET /pdf/:id` — used by the web client to poll extraction progress. */
-export const PdfStatusResponseSchema = z.object({
+export const PdfSummarySchema = z.object({
   id: z.string(),
   filename: z.string(),
   pageCount: z.number().int().positive(),
-  status: PdfStatusSchema,
+  createdAt: z.string(),
 });
 
-export type PdfStatusResponse = z.infer<typeof PdfStatusResponseSchema>;
+export type PdfSummary = z.infer<typeof PdfSummarySchema>;
+
+/** Response for `GET /pdfs` — every PDF in the workspace, newest first. */
+export const PdfListResponseSchema = z.object({
+  pdfs: z.array(PdfSummarySchema),
+});
+
+export type PdfListResponse = z.infer<typeof PdfListResponseSchema>;
 
 /** Response for `GET /pdf/:id/pages/:n/text` — a single page's extracted text. */
 export const PageTextResponseSchema = z.object({
@@ -89,46 +78,20 @@ export const ExtractionReportSchema = z.object({
 
 export type ExtractionReport = z.infer<typeof ExtractionReportSchema>;
 
-/** Request body for `POST /pdf/:id/memos` — a user-authored study note. */
-export const MemoCreateRequestSchema = z.object({
-  content: z.string().min(1).max(4000),
-  pageNumber: z.number().int().positive().optional(),
-});
-
-export type MemoCreateRequest = z.infer<typeof MemoCreateRequestSchema>;
-
-/** A single user-authored memo attached to a PDF (optionally to one page). */
-export const MemoSchema = z.object({
-  id: z.string(),
-  pdfId: z.string(),
-  pageNumber: z.number().int().positive().nullable(),
+/**
+ * Response for `GET /pdf/:id/pages/:n/note` — the user's note for one page, as
+ * plain markdown. An empty string means the page has no note file yet.
+ */
+export const PageNoteResponseSchema = z.object({
+  pageNumber: z.number().int().positive(),
   content: z.string(),
-  createdAt: z.string(),
 });
 
-export type Memo = z.infer<typeof MemoSchema>;
+export type PageNoteResponse = z.infer<typeof PageNoteResponseSchema>;
 
-/** Response for `GET /pdf/:id/memos` — all memos for a PDF. */
-export const MemoListResponseSchema = z.object({
-  memos: z.array(MemoSchema),
+/** Request body for `PUT /pdf/:id/pages/:n/note`. */
+export const PageNoteUpdateRequestSchema = z.object({
+  content: z.string().max(100_000),
 });
 
-export type MemoListResponse = z.infer<typeof MemoListResponseSchema>;
-
-/** A single item in a PDF's study log — a user-authored memo. */
-export const StudyLogItemSchema = z.object({
-  kind: z.literal("memo"),
-  id: z.string(),
-  pageNumber: z.number().int().positive().nullable(),
-  content: z.string(),
-  createdAt: z.string(),
-});
-
-export type StudyLogItem = z.infer<typeof StudyLogItemSchema>;
-
-/** Response for `GET /pdf/:id/study-log` — the PDF's memos, newest first. */
-export const StudyLogResponseSchema = z.object({
-  items: z.array(StudyLogItemSchema),
-});
-
-export type StudyLogResponse = z.infer<typeof StudyLogResponseSchema>;
+export type PageNoteUpdateRequest = z.infer<typeof PageNoteUpdateRequestSchema>;

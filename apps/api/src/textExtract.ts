@@ -13,11 +13,6 @@ const STANDARD_FONT_DATA_URL = path.join(pdfjsRoot, "standard_fonts") + path.sep
 /** A page is considered to "have text" once its non-whitespace length clears this. */
 const HAS_TEXT_MIN_CHARS = 10;
 
-// NUL (U+0000) — Postgres text columns reject it, and some PDFs emit it in the
-// text layer, so it must be stripped before persisting. Built via fromCharCode
-// to keep an actual NUL byte out of the source file.
-const NUL = String.fromCharCode(0);
-
 export interface PageText {
   pageNumber: number;
   text: string;
@@ -82,7 +77,6 @@ export async function extractPdfText(buffer: Buffer): Promise<PageText[]> {
           text += item.str;
           if (item.hasEOL) text += "\n";
         }
-        text = text.split(NUL).join("");
         const nonWhitespace = text.replace(/\s/g, "").length;
         pages.push({ pageNumber: n, text, hasText: nonWhitespace >= HAS_TEXT_MIN_CHARS });
       } finally {
