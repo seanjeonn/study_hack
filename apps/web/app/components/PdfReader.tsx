@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import AiNotePanel from "@/app/components/AiNotePanel";
 import ExtractionReportPanel from "@/app/components/ExtractionReportPanel";
 import PageNoteEditor from "@/app/components/PageNoteEditor";
 import PageImage from "@/app/components/PageImage";
@@ -50,6 +51,7 @@ export default function PdfReader({
 
         <div className="flex flex-col gap-4">
           <PageNoteEditor pdfId={summary.id} page={page} />
+          <AiNotePanel pdfId={summary.id} page={page} />
           <PageTextPanel pdfId={summary.id} page={page} />
         </div>
       </div>

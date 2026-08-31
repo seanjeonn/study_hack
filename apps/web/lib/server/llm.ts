@@ -21,6 +21,8 @@ export function getClient(): OpenAI {
   if (!apiKey) {
     throw new LlmError(503, "OPENAI_API_KEY is not configured");
   }
-  client = new OpenAI({ apiKey });
+  // OPENAI_BASE_URL points at any OpenAI-compatible endpoint (a local model,
+  // a proxy). Undefined falls through to the SDK default.
+  client = new OpenAI({ apiKey, baseURL: process.env.OPENAI_BASE_URL || undefined });
   return client;
 }

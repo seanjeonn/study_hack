@@ -91,6 +91,10 @@ export function pageNotePath(id: string, pageNumber: number): string {
   return path.join(pdfDir(id), "notes", `${pageStem(pageNumber)}.md`);
 }
 
+export function pageAiNotePath(id: string, pageNumber: number): string {
+  return path.join(pdfDir(id), "ai", `${pageStem(pageNumber)}.md`);
+}
+
 export function conceptsDir(): string {
   return resolveInWorkspace("concepts");
 }

@@ -96,3 +96,15 @@ export const PdfDetailResponseSchema = z.object({
 });
 
 export type PdfDetailResponse = z.infer<typeof PdfDetailResponseSchema>;
+
+/**
+ * Response for the AI page-note routes — the whole accumulated markdown file
+ * for one page. Sections are append-only, so this grows by one `##` block per
+ * generation and older sections are never rewritten.
+ */
+export const AiNoteResponseSchema = z.object({
+  pageNumber: z.number().int().positive(),
+  content: z.string(),
+});
+
+export type AiNoteResponse = z.infer<typeof AiNoteResponseSchema>;
