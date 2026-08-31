@@ -20,9 +20,14 @@ export default async function PdfPage({ params }: PageProps<"/pdfs/[id]">) {
             </h1>
             <p className="font-mono text-xs text-[#807d72]">{detail.summary.id}</p>
           </div>
-          <Link href="/" className="text-sm font-medium text-[#f54e00] hover:underline">
-            ← Library
-          </Link>
+          <div className="flex items-baseline gap-5">
+            <Link href="/map" className="text-sm font-medium text-[#f54e00] hover:underline">
+              Concept map
+            </Link>
+            <Link href="/" className="text-sm font-medium text-[#f54e00] hover:underline">
+              ← Library
+            </Link>
+          </div>
         </header>
 
         <PdfReader summary={detail.summary} extraction={detail.extraction} />

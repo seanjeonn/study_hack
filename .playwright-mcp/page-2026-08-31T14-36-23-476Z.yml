@@ -1,0 +1,40 @@
+- generic [active] [ref=f4e1]:
+  - button "Open Next.js Dev Tools" [ref=f4e57] [cursor=pointer]
+  - alert [ref=f4e61]
+  - main [ref=f4e73]:
+    - generic [ref=f4e74]:
+      - generic [ref=f4e75]:
+        - generic [ref=f4e76]:
+          - heading "신경망 강의 03.pdf" [level=1] [ref=f4e77]
+          - paragraph [ref=f4e78]: "03"
+        - generic [ref=f4e79]:
+          - link "Concept map" [ref=f4e80] [cursor=pointer]:
+            - /url: /map
+          - link "← Library" [ref=f4e81] [cursor=pointer]:
+            - /url: /
+      - generic [ref=f4e82]:
+        - button "Show extraction quality" [ref=f4e84]
+        - generic [ref=f4e85]:
+          - img "신경망 강의 03.pdf — page 3" [ref=f4e87]
+          - generic [ref=f4e88]:
+            - generic [ref=f4e89]:
+              - generic [ref=f4e90]:
+                - generic [ref=f4e91]: My note · page 3
+                - generic [ref=f4e92]: notes/page-003.md
+              - textbox "Write your note for page 3…" [ref=f4e93]: 브라우저에서 저장한 노트
+              - generic [ref=f4e94]:
+                - button "Save" [ref=f4e95]
+                - generic [ref=f4e96]: ⌘S
+            - generic [ref=f4e97]:
+              - generic [ref=f4e98]:
+                - generic [ref=f4e99]: AI note · page 3
+                - generic [ref=f4e100]: ai/page-003.md
+              - generic [ref=f4e101]: "## 2026-08-31 14:29 요약 #2: 이 페이지의 핵심. - 피드백 A#2 - 피드백 B#2 ## 2026-08-31 14:29 요약 #3: 이 페이지의 핵심. - 피드백 A#3 - 피드백 B#3 ## 2026-08-31 14:30 요약 #1: 이 페이지의 핵심. - 피드백 A#1 - 피드백 B#1"
+              - button "Generate" [ref=f4e104]
+            - generic [ref=f4e105]:
+              - generic [ref=f4e106]: Extracted text · page 3
+              - generic [ref=f4e107]: 역전파 알고리즘 손실 함수의 기울기를 계산한다. 연쇄 법칙(chain rule)을 사용합니다. 가중치를 갱신하는 신호를 뒤로 전달한다.
+        - generic [ref=f4e109]:
+          - button "Previous" [ref=f4e110]
+          - generic [ref=f4e111]: 3 / 6
+          - button "Next" [ref=f4e112]

@@ -108,3 +108,57 @@ export const AiNoteResponseSchema = z.object({
 });
 
 export type AiNoteResponse = z.infer<typeof AiNoteResponseSchema>;
+
+/** A place a concept appears: a PDF id and the 1-indexed pages it shows up on. */
+export const ConceptSourceSchema = z.object({
+  pdf: z.string(),
+  pages: z.array(z.number().int().positive()),
+});
+
+export type ConceptSource = z.infer<typeof ConceptSourceSchema>;
+
+/** Response for `GET /api/concepts/[slug]` — one concept, body included. */
+export const ConceptResponseSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  aliases: z.array(z.string()),
+  sources: z.array(ConceptSourceSchema),
+  related: z.array(z.string()),
+  updated: z.string(),
+  body: z.string(),
+});
+
+export type ConceptResponse = z.infer<typeof ConceptResponseSchema>;
+
+/**
+ * Response for `GET /api/concepts/graph`. Edges are undirected pairs, already
+ * deduped and stripped of any that point at a concept file that no longer
+ * exists.
+ */
+export const ConceptGraphResponseSchema = z.object({
+  nodes: z.array(
+    z.object({
+      slug: z.string(),
+      name: z.string(),
+      /** How many distinct PDFs mention the concept — its cross-PDF weight. */
+      pdfCount: z.number().int().nonnegative(),
+    }),
+  ),
+  edges: z.array(z.object({ source: z.string(), target: z.string() })),
+});
+
+export type ConceptGraphResponse = z.infer<typeof ConceptGraphResponseSchema>;
+
+/**
+ * Response for `POST /api/concepts/refresh`. `llmCalls` is reported so the
+ * cost of a refresh is visible rather than hidden.
+ */
+export const ConceptRefreshResponseSchema = z.object({
+  scannedPdfs: z.number().int().nonnegative(),
+  skippedPdfs: z.number().int().nonnegative(),
+  llmCalls: z.number().int().nonnegative(),
+  conceptsCreated: z.number().int().nonnegative(),
+  conceptsUpdated: z.number().int().nonnegative(),
+});
+
+export type ConceptRefreshResponse = z.infer<typeof ConceptRefreshResponseSchema>;

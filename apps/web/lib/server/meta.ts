@@ -28,6 +28,9 @@ export const PdfMetaSchema = z.object({
   /** Per-page "has extractable text" flags, index 0 = page 1. */
   hasText: z.array(z.boolean()),
   extraction: ExtractionReportSchema,
+  /** Set by the concept refresh so an unchanged PDF is not re-scanned. */
+  conceptFingerprint: z.string().optional(),
+  conceptRefreshedAt: z.string().optional(),
 });
 
 export type PdfMeta = z.infer<typeof PdfMetaSchema>;

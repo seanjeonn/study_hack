@@ -16,6 +16,9 @@ export default async function LibraryPage() {
             <code className="font-mono text-[13px] text-[#26251e]">{WORKSPACE_ROOT}</code> — plain
             files you can open in any editor.
           </p>
+          <Link href="/map" className="w-fit text-sm font-medium text-[#f54e00] hover:underline">
+            Concept map →
+          </Link>
         </header>
 
         <UploadButton />

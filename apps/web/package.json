@@ -11,6 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@xyflow/react": "^12.11.5",
     "next": "16.2.9",
     "openai": "^6.46.0",
     "pdf-to-img": "^6.2.0",

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -41,9 +41,20 @@ export function slugify(filename: string): string {
   return ID_PATTERN.test(slug) ? slug : "pdf";
 }
 
-/** A concept slug, kept clear of the route segments `concepts/` reserves. */
+/**
+ * A concept slug, kept clear of the route segments `concepts/` reserves.
+ *
+ * A concept's slug is its identity, so unlike a PDF directory it cannot fall
+ * back to a shared stem: a fully non-Latin name (Korean, say) slugifies away to
+ * nothing, and every such concept would collapse into one file. Those names get
+ * a stable hash of the name instead. The readable name still lives in the
+ * file's `name:` frontmatter.
+ */
 export function conceptSlug(name: string): string {
   const slug = slugify(name);
+  if (slug === "pdf" && name.toLowerCase() !== "pdf") {
+    return `c-${createHash("sha1").update(name).digest("hex").slice(0, 10)}`;
+  }
   return RESERVED_CONCEPT_SLUGS.has(slug) ? `${slug}-concept` : slug;
 }
 
