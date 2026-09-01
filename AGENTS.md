@@ -82,7 +82,7 @@ all three are mandatory:
 The workspace is the user's, not the app's. This is the product, not a detail.
 
 - **The app owns `.cache/` only.** It is derived from `source.pdf` and can be rebuilt at any time.
-- **`source.pdf`, `notes/`, `ai/`, and `concepts/` are user data.** Never rewrite or delete them except where the user explicitly asked: a note save overwrites that one note; an AI note appends a section; a concept refresh may only widen frontmatter and must leave the body untouched.
+- **`source.pdf`, `notes/`, `ai/`, and `concepts/` are user data.** Never rewrite or delete them except where the user explicitly asked: a note entry is appended, or one entry is edited in place; an AI note appends a section; a concept refresh may only widen frontmatter and must leave the body untouched.
 - **Assume concurrent editors.** Obsidian, git, and other agents touch these files. Read fresh from disk rather than caching, and write through `atomicWrite`.
 - **Paths are guarded in `lib/server/workspace.ts`.** Ids match `^[a-z0-9][a-z0-9-]{0,99}$`, resolved paths are re-checked against the workspace root, and page numbers are bounds-checked. Route new filesystem access through those helpers rather than joining paths yourself.
 

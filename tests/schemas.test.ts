@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ConceptRefreshResponseSchema,
   ExtractionReportSchema,
-  PageNoteUpdateRequestSchema,
+  NoteEntryCreateRequestSchema,
+  NoteEntryUpdateRequestSchema,
   PdfSummarySchema,
 } from "@/lib/schemas";
 
@@ -19,17 +20,28 @@ const report = {
   recommendation: "ok",
 };
 
-describe("PageNoteUpdateRequestSchema", () => {
-  it("accepts a note at the 100 000 char cap", () => {
-    expect(PageNoteUpdateRequestSchema.safeParse({ content: "a".repeat(100_000) }).success).toBe(
+describe("NoteEntryCreateRequestSchema", () => {
+  it("accepts an entry at the 100 000 char cap", () => {
+    expect(NoteEntryCreateRequestSchema.safeParse({ content: "a".repeat(100_000) }).success).toBe(
       true,
     );
   });
 
   it("rejects one char past the cap", () => {
-    expect(PageNoteUpdateRequestSchema.safeParse({ content: "a".repeat(100_001) }).success).toBe(
+    expect(NoteEntryCreateRequestSchema.safeParse({ content: "a".repeat(100_001) }).success).toBe(
       false,
     );
+  });
+
+  it("rejects an empty or whitespace-only entry — an entry has to say something", () => {
+    expect(NoteEntryCreateRequestSchema.safeParse({ content: "" }).success).toBe(false);
+    expect(NoteEntryCreateRequestSchema.safeParse({ content: "   \n " }).success).toBe(false);
+  });
+});
+
+describe("NoteEntryUpdateRequestSchema", () => {
+  it("rejects an update with no entry id", () => {
+    expect(NoteEntryUpdateRequestSchema.safeParse({ content: "revised" }).success).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import PdfLink from "@/app/components/PdfLink";
 import UploadButton from "@/app/components/UploadButton";
 import { listPdfs } from "@/lib/server/pdfStore";
 import { WORKSPACE_ROOT } from "@/lib/server/workspace";
@@ -7,7 +7,7 @@ export default async function LibraryPage() {
   const pdfs = await listPdfs();
 
   return (
-    <main className="min-h-screen bg-[#f7f7f4] px-6 py-16 text-[#26251e]">
+    <main className="px-6 py-16">
       <div className="mx-auto flex max-w-3xl flex-col gap-10">
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl font-normal tracking-tight">Library</h1>
@@ -16,9 +16,6 @@ export default async function LibraryPage() {
             <code className="font-mono text-[13px] text-[#26251e]">{WORKSPACE_ROOT}</code> — plain
             files you can open in any editor.
           </p>
-          <Link href="/map" className="w-fit text-sm font-medium text-[#f54e00] hover:underline">
-            Concept map →
-          </Link>
         </header>
 
         <UploadButton />
@@ -31,8 +28,8 @@ export default async function LibraryPage() {
           <ul className="flex flex-col divide-y divide-[#efeee8] overflow-hidden rounded-xl border border-[#e6e5e0] bg-white">
             {pdfs.map((pdf) => (
               <li key={pdf.id}>
-                <Link
-                  href={`/pdfs/${pdf.id}`}
+                <PdfLink
+                  id={pdf.id}
                   className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-[#f7f7f4]"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
@@ -42,7 +39,7 @@ export default async function LibraryPage() {
                   <span className="shrink-0 font-mono text-xs tabular-nums text-[#807d72]">
                     {pdf.pageCount}p
                   </span>
-                </Link>
+                </PdfLink>
               </li>
             ))}
           </ul>

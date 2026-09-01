@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AiNotePanel from "@/app/components/AiNotePanel";
 import ExtractionReportPanel from "@/app/components/ExtractionReportPanel";
 import PageNoteEditor from "@/app/components/PageNoteEditor";
 import PageImage from "@/app/components/PageImage";
 import PageTextPanel from "@/app/components/PageTextPanel";
+import { rememberLastPage } from "@/lib/lastPage";
 import type { ExtractionReport, PdfSummary } from "@/lib/schemas";
 
 export default function PdfReader({
@@ -24,6 +25,9 @@ export default function PdfReader({
   // deep-links straight to `?page=N`.
   const requested = Number(searchParams.get("page"));
   const page = clamp(Number.isInteger(requested) ? requested : 1, summary.pageCount);
+
+  // Coming back to this PDF from the library or the sidebar resumes here.
+  useEffect(() => rememberLastPage(summary.id, page), [summary.id, page]);
 
   function go(target: number) {
     const clamped = clamp(target, summary.pageCount);

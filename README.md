@@ -61,14 +61,19 @@ Because it is all just markdown:
   seeds a `.gitignore` there that excludes `.cache/`, so only your PDFs and
   markdown get committed.
 - **Obsidian** — open the workspace as a vault and edit the same files. The app
-  re-reads a note from disk every time you move pages, so external edits win.
+  re-reads a note from disk every time you move pages, so external edits win. A
+  note file is plain markdown: entries are `## YYYY-MM-DD HH:MM:SS` sections,
+  and anything above the first one still shows up as a single earlier note.
 - **Claude Code** (or any agent) — point it at the folder and it can read your
   notes and the extracted text directly.
 
 ## What it does
 
-**Page notes.** One markdown file per page, saved when you press Save (or ⌘S).
-No autosave and no sync loop — the file changes when you say so.
+**Page notes.** One markdown file per page, written as a transcript: press Add
+(or ⌘↵) and what you wrote is appended as its own timestamped `##` section, so
+notes on a page accumulate instead of replacing each other. Any single entry can
+be edited afterwards. No autosave and no sync loop — the file changes when you
+say so.
 
 **AI page notes.** Press Generate and the model reads that one page plus your
 note, then appends a timestamped section to `ai/page-NNN.md` with a summary and

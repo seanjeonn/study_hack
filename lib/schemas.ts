@@ -72,22 +72,43 @@ export const ExtractionReportSchema = z.object({
 export type ExtractionReport = z.infer<typeof ExtractionReportSchema>;
 
 /**
- * Response for `GET /api/pdfs/[id]/pages/[n]/note` — the user's note for one page, as
- * plain markdown. An empty string means the page has no note file yet.
+ * One entry in a page's note. `id` is the entry's timestamp heading, which is
+ * also its identity on disk. An empty `id` is the preamble: text that sits
+ * above the first timestamp heading, which is how a hand-written or older flat
+ * note file reads.
+ */
+export const NoteEntrySchema = z.object({
+  id: z.string(),
+  content: z.string(),
+});
+
+export type NoteEntry = z.infer<typeof NoteEntrySchema>;
+
+/**
+ * Response for the page-note routes — the page's note as its accumulated
+ * entries, oldest first. An empty array means the page has no note file yet.
  */
 export const PageNoteResponseSchema = z.object({
   pageNumber: z.number().int().positive(),
-  content: z.string(),
+  entries: z.array(NoteEntrySchema),
 });
 
 export type PageNoteResponse = z.infer<typeof PageNoteResponseSchema>;
 
-/** Request body for `PUT /api/pdfs/[id]/pages/[n]/note`. */
-export const PageNoteUpdateRequestSchema = z.object({
-  content: z.string().max(100_000),
+/** Request body for `POST /api/pdfs/[id]/pages/[n]/note` — append one entry. */
+export const NoteEntryCreateRequestSchema = z.object({
+  content: z.string().trim().min(1).max(100_000),
 });
 
-export type PageNoteUpdateRequest = z.infer<typeof PageNoteUpdateRequestSchema>;
+export type NoteEntryCreateRequest = z.infer<typeof NoteEntryCreateRequestSchema>;
+
+/** Request body for `PUT /api/pdfs/[id]/pages/[n]/note` — edit one entry in place. */
+export const NoteEntryUpdateRequestSchema = z.object({
+  entryId: z.string(),
+  content: z.string().trim().min(1).max(100_000),
+});
+
+export type NoteEntryUpdateRequest = z.infer<typeof NoteEntryUpdateRequestSchema>;
 
 /** Response for `GET /api/pdfs/[id]` — a PDF's summary plus its extraction report. */
 export const PdfDetailResponseSchema = z.object({
