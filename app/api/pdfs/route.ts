@@ -1,4 +1,4 @@
-import { PdfListResponseSchema, PdfSummarySchema } from "@/lib/schemas";
+import { PdfListResponseSchema, PdfSummarySchema, SubjectSchema } from "@/lib/schemas";
 import { addPdf, listPdfs } from "@/lib/server/pdfStore";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -27,8 +27,13 @@ export async function POST(request: Request) {
   if (buffer.subarray(0, 4).toString("latin1") !== "%PDF") {
     return Response.json({ error: "the uploaded file is not a valid PDF" }, { status: 400 });
   }
+  // An absent or empty subject uploads the PDF ungrouped.
+  const subject = SubjectSchema.safeParse(form.get("subject") ?? "");
+  if (!subject.success) {
+    return Response.json({ error: "invalid subject" }, { status: 400 });
+  }
   try {
-    const summary = await addPdf(buffer, file.name);
+    const summary = await addPdf(buffer, file.name, subject.data);
     // Validate the outbound payload at the boundary before returning it.
     return Response.json(PdfSummarySchema.parse(summary), { status: 201 });
   } catch (err) {

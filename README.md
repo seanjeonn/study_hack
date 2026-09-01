@@ -44,6 +44,7 @@ workspace/
 ├── .gitignore                  excludes .cache/ — yours to edit
 ├── deep-learning-lecture-03/
 │   ├── source.pdf              the PDF you uploaded
+│   ├── subject.md              the subject it is grouped under — yours to edit
 │   ├── notes/page-001.md       your notes — one file per page
 │   ├── ai/page-014.md          AI notes, appended as timestamped sections
 │   └── .cache/                 the app's own index — safe to delete
@@ -55,20 +56,32 @@ workspace/
 and the app rebuilds it from `source.pdf` on the next request. Which also means
 you can drop a PDF into a new folder by hand and the app will pick it up.
 
+**Subjects.** A PDF can be filed under a subject — free text like `기계학습`,
+set when you upload it or from the badge in the reader header. It lives in that
+PDF's `subject.md` as one line of frontmatter, so it survives deleting the cache
+and you can set it by hand. The library and the sidebar group by it, and the
+concept map can be narrowed to a single subject. A PDF with no `subject.md` is
+simply ungrouped.
+
 Because it is all just markdown:
 
 - **git** — `cd workspace && git init` and your notes have a history. The app
   seeds a `.gitignore` there that excludes `.cache/`, so only your PDFs and
   markdown get committed.
 - **Obsidian** — open the workspace as a vault and edit the same files. The app
-  re-reads a note from disk every time you move pages, so external edits win.
+  re-reads a note from disk every time you move pages, so external edits win. A
+  note file is plain markdown: entries are `## YYYY-MM-DD HH:MM:SS` sections,
+  and anything above the first one still shows up as a single earlier note.
 - **Claude Code** (or any agent) — point it at the folder and it can read your
   notes and the extracted text directly.
 
 ## What it does
 
-**Page notes.** One markdown file per page, saved when you press Save (or ⌘S).
-No autosave and no sync loop — the file changes when you say so.
+**Page notes.** One markdown file per page, written as a transcript: press Add
+(or ⌘↵) and what you wrote is appended as its own timestamped `##` section, so
+notes on a page accumulate instead of replacing each other. Any single entry can
+be edited afterwards. No autosave and no sync loop — the file changes when you
+say so.
 
 **AI page notes.** Press Generate and the model reads that one page plus your
 note, then appends a timestamped section to `ai/page-NNN.md` with a summary and

@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AiNotePanel from "@/app/components/AiNotePanel";
 import ExtractionReportPanel from "@/app/components/ExtractionReportPanel";
 import PageNoteEditor from "@/app/components/PageNoteEditor";
 import PageImage from "@/app/components/PageImage";
 import PageTextPanel from "@/app/components/PageTextPanel";
+import { rememberLastPage } from "@/lib/lastPage";
 import type { ExtractionReport, PdfSummary } from "@/lib/schemas";
 
 export default function PdfReader({
@@ -25,6 +26,9 @@ export default function PdfReader({
   const requested = Number(searchParams.get("page"));
   const page = clamp(Number.isInteger(requested) ? requested : 1, summary.pageCount);
 
+  // Coming back to this PDF from the library or the sidebar resumes here.
+  useEffect(() => rememberLastPage(summary.id, page), [summary.id, page]);
+
   function go(target: number) {
     const clamped = clamp(target, summary.pageCount);
     if (clamped === page) return;
@@ -34,7 +38,7 @@ export default function PdfReader({
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
       <div className="flex flex-col gap-2">
         <button
           type="button"
@@ -46,10 +50,10 @@ export default function PdfReader({
         {reportOpen ? <ExtractionReportPanel report={extraction} /> : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[3fr_2fr]">
         <PageImage pdfId={summary.id} filename={summary.filename} page={page} />
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
           <PageNoteEditor pdfId={summary.id} page={page} />
           <AiNotePanel pdfId={summary.id} page={page} />
           <PageTextPanel pdfId={summary.id} page={page} />

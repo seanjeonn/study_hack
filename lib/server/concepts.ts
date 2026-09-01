@@ -74,6 +74,18 @@ export async function listConcepts(): Promise<Concept[]> {
 }
 
 /**
+ * Narrow concepts to the ones a set of PDFs actually mentions. Sources are
+ * filtered rather than only the concepts, so `pdfCount` — and with it the map's
+ * cross-PDF highlight — is recomputed against the subject, and `buildGraph`
+ * drops the edges that now point outside the set.
+ */
+export function filterConceptsByPdfs(concepts: Concept[], pdfIds: Set<string>): Concept[] {
+  return concepts
+    .map((c) => ({ ...c, sources: c.sources.filter((s) => pdfIds.has(s.pdf)) }))
+    .filter((c) => c.sources.length > 0);
+}
+
+/**
  * Build the graph. `related` is a one-sided list on each file, so edges are
  * normalized to an ordered pair and deduped, and any edge pointing at a
  * concept that no longer exists is dropped — deleting a concept file must not

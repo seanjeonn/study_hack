@@ -11,10 +11,12 @@ import {
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { subjectsOf } from "@/lib/grouping";
 import {
   ConceptGraphResponseSchema,
   ConceptRefreshResponseSchema,
   ConceptResponseSchema,
+  PdfListResponseSchema,
   type ConceptGraphResponse,
   type ConceptResponse,
 } from "@/lib/schemas";
@@ -22,26 +24,50 @@ import {
 export default function ConceptMap() {
   const [graph, setGraph] = useState<ConceptGraphResponse>({ nodes: [], edges: [] });
   const [selected, setSelected] = useState<ConceptResponse | null>(null);
+  // "" is All — the whole graph, exactly as before subjects existed.
+  const [subject, setSubject] = useState("");
+  const [subjects, setSubjects] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadGraph = useCallback(async () => {
     try {
-      const res = await fetch("/api/concepts/graph");
+      const url = subject
+        ? `/api/concepts/graph?subject=${encodeURIComponent(subject)}`
+        : "/api/concepts/graph";
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`failed to load the graph (${res.status})`);
       // Validate the inbound payload at the boundary before trusting it.
       setGraph(ConceptGraphResponseSchema.parse(await res.json()));
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed to load the graph");
     }
-  }, []);
+  }, [subject]);
 
   useEffect(() => {
     (async () => {
       await loadGraph();
     })();
   }, [loadGraph]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/pdfs");
+        if (!res.ok) return;
+        // Validate the inbound payload at the boundary before trusting it.
+        const parsed = PdfListResponseSchema.parse(await res.json());
+        if (active) setSubjects(subjectsOf(parsed.pdfs));
+      } catch {
+        // The picker is an extra: without it the map still works, unfiltered.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function refresh() {
     setRefreshing(true);
@@ -89,6 +115,24 @@ export default function ConceptMap() {
         >
           {refreshing ? "Reading your PDFs…" : "Refresh mindmap"}
         </button>
+        {subjects.length > 0 ? (
+          <select
+            value={subject}
+            onChange={(event) => {
+              setSubject(event.target.value);
+              // The rail could otherwise keep showing a concept outside the filter.
+              setSelected(null);
+            }}
+            className="h-10 rounded-md border border-[#cfcdc4] bg-white px-3 text-sm font-medium text-[#26251e]"
+          >
+            <option value="">All</option>
+            {subjects.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {status ? <p className="font-mono text-xs text-[#5a5852]">{status}</p> : null}
         {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
       </div>
@@ -97,7 +141,9 @@ export default function ConceptMap() {
         <div className="h-[70vh] overflow-hidden rounded-xl border border-[#e6e5e0] bg-white">
           {graph.nodes.length === 0 ? (
             <p className="flex h-full items-center justify-center px-8 text-center text-sm text-[#807d72]">
-              No concepts yet. Refresh the mindmap to read your PDFs.
+              {subject
+                ? "No concepts in this subject yet."
+                : "No concepts yet. Refresh the mindmap to read your PDFs."}
             </p>
           ) : (
             <ReactFlow nodes={nodes} edges={edges} onNodeClick={onNodeClick} fitView>

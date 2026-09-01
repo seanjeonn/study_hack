@@ -106,6 +106,11 @@ export function pageAiNotePath(id: string, pageNumber: number): string {
   return path.join(pdfDir(id), "ai", `${pageStem(pageNumber)}.md`);
 }
 
+/** The user-owned file holding a PDF's subject, outside `.cache/` so it survives a rebuild. */
+export function subjectPath(id: string): string {
+  return path.join(pdfDir(id), "subject.md");
+}
+
 export function conceptsDir(): string {
   return resolveInWorkspace("concepts");
 }
