@@ -3,10 +3,11 @@ node_modules/
 .pnpm-store/
 
 # build outputs
-dist/
 .next/
 out/
 build/
+dist/
+next-env.d.ts
 
 # env (keep examples)
 .env
@@ -16,11 +17,17 @@ build/
 # logs
 *.log
 npm-debug.log*
+.pnpm-debug.log*
 
 # misc
 .DS_Store
+*.pem
 coverage/
 *.tsbuildinfo
+.vercel
+
+# user data — your PDFs, your notes, and the app's derived cache
+workspace/
 
 # local-only tracking docs (roadmap / planning)
 docs/ROADMAP.md
