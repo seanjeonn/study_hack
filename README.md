@@ -114,7 +114,7 @@ are not obvious from the code (what counts as user data, and when the app is
 allowed to call a model). Then:
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm build
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
 Branch names are `<type>/<scope>-<kebab-desc>`; PR titles follow Conventional

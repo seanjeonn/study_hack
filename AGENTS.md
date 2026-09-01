@@ -31,6 +31,7 @@ study_hack/
 ├── lib/
 │   ├── schemas.ts             zod wire schemas — client-safe, no node code
 │   └── server/                node-only: fs · pdfjs · openai
+├── tests/                     vitest suite (`pnpm test`)
 └── workspace/                 user data — gitignored, $STUDY_WORKSPACE
 ```
 
@@ -47,12 +48,13 @@ pnpm typecheck      # tsc --noEmit
 pnpm lint
 pnpm format         # prettier --write "."
 pnpm format:check
+pnpm test           # vitest run (watch mode: pnpm exec vitest)
 ```
 
 **Verification chain** — after non-trivial changes, run in this order:
 
 ```bash
-pnpm format:check && pnpm lint && pnpm typecheck && pnpm build
+pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
 If `typecheck` fails on something under `.next/types`, the route types are stale — run `pnpm build` (or delete `.next/dev`) and re-run.

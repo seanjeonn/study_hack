@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # Before setup-node so `cache: pnpm` finds the binary; version comes
+      # from package.json's `packageManager` field.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      # next-env.d.ts / .next/types are gitignored and app code uses the
+      # generated RouteContext/PageProps globals — generate before tsc.
+      - run: pnpm exec next typegen
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
