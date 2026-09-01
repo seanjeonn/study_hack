@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    // CommonJS on purpose. The sources are typechecked twice — once by the
+    // repo root (`pnpm typecheck`, moduleResolution "bundler") and once here,
+    // on the way to runnable JS — and CJS is the one target where extensionless
+    // relative imports are correct under both. The alternative is `.js`
+    // extensions on relative imports, which the repo bans everywhere else.
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"]
+}

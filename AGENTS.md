@@ -32,6 +32,7 @@ study_hack/
 │   ├── schemas.ts             zod wire schemas — client-safe, no node code
 │   └── server/                node-only: fs · pdfjs · openai
 ├── bin/                       the published `study-hack` CLI (plain .mjs, no build step)
+├── proxy/                     separate package: the beta AI relay, deployed by hand
 ├── scripts/                   repo maintenance .mjs (pack pruning, fixture generation)
 ├── tests/                     vitest suite (`pnpm test`)
 └── workspace/                 user data — gitignored, $STUDY_WORKSPACE

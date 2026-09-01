@@ -1,0 +1,29 @@
+# TLS front end for the beta proxy. Caddy gets and renews the certificate on
+# its own, which is the entire reason it is here rather than nginx.
+#
+# Replace the hostname with the real one, and set the same value as
+# PROXY_BASE_URL in lib/server/llm.ts (as https://<host>/v1).
+
+proxy.study-hack.example {
+	encode zstd gzip
+
+	# The relay can sit behind a long model call; the default 30s write timeout
+	# would cut off a slow completion mid-flight.
+	reverse_proxy 127.0.0.1:8787 {
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	log {
+		output file /var/log/caddy/study-hack-proxy.log
+		# The Authorization header carries a beta token; never log it.
+		format json
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

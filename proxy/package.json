@@ -1,0 +1,22 @@
+{
+  "name": "study-hack-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Managed free-beta AI relay and telemetry sink for study-hack. Deployed by hand to a small VPS; never published.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}
