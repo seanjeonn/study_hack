@@ -3,7 +3,7 @@ import "server-only";
 import fs from "node:fs/promises";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { z } from "zod";
-import { LlmError, MODEL, getClient } from "@/lib/server/llm";
+import { LlmError, VISION_MODEL, getClient } from "@/lib/server/llm";
 import { readPageNote } from "@/lib/server/notes";
 import { getPageText, renderPage } from "@/lib/server/pdfStore";
 import { atomicWrite, pageAiNotePath } from "@/lib/server/workspace";
@@ -16,8 +16,9 @@ const AiNoteModelOutputSchema = z.object({
 
 const SYSTEM_PROMPT = [
   "You annotate a SINGLE PAGE of a study PDF.",
-  "You are given that page's text (or, when the page has no extractable text, its image)",
+  "You are given that page's rendered image, its extracted text when it has any,",
   "and the reader's own note for it, which may be empty.",
+  "Use the image for diagrams, figures, and anything the text layer misses.",
   "Write `summary` as a compact account of what the page actually teaches,",
   "in the same language as the page.",
   "Write `feedback` as 2-5 bullets responding to the reader's note: fill the gaps it leaves,",
@@ -55,23 +56,26 @@ export async function generateAiNote(id: string, pageNumber: number): Promise<st
     ? `The reader's note for this page:\n${userNote.trim()}`
     : "The reader has not written a note for this page yet.";
 
-  // A page with no extractable text is a scan or an image slide: send the
-  // rendered page instead of its (empty) text layer.
-  const content: ChatCompletionContentPart[] = pageText.hasText
-    ? [{ type: "text", text: `Page ${pageNumber} text:\n${pageText.text}\n\n---\n${noteSection}` }]
-    : [
-        { type: "text", text: `Page ${pageNumber} has no extractable text — read the image.` },
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:image/png;base64,${(await renderPage(id, pageNumber)).toString("base64")}`,
-          },
-        },
-        { type: "text", text: noteSection },
-      ];
+  // The rendered page always goes along: slides mix text with diagrams and
+  // figures the text layer cannot carry, so the model reads both.
+  const content: ChatCompletionContentPart[] = [
+    {
+      type: "text",
+      text: pageText.hasText
+        ? `Page ${pageNumber} text:\n${pageText.text}`
+        : `Page ${pageNumber} has no extractable text — read the image.`,
+    },
+    {
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${(await renderPage(id, pageNumber)).toString("base64")}`,
+      },
+    },
+    { type: "text", text: noteSection },
+  ];
 
   const completion = await openai.chat.completions.create({
-    model: MODEL,
+    model: VISION_MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content },

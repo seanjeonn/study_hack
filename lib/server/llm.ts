@@ -4,6 +4,10 @@ import OpenAI from "openai";
 
 export const MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 
+// The AI page note always carries the rendered page image, so it runs on a
+// cheap vision-capable model, tunable independently of the text model above.
+export const VISION_MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-5-mini";
+
 export class LlmError extends Error {
   status: number;
   constructor(status: number, message: string) {

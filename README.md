@@ -73,8 +73,9 @@ No autosave and no sync loop — the file changes when you say so.
 **AI page notes.** Press Generate and the model reads that one page plus your
 note, then appends a timestamped section to `ai/page-NNN.md` with a summary and
 feedback on what your note missed. Sections accumulate; nothing is overwritten.
-Pages with no extractable text are sent as images instead. The model is called
-only on that button — never on upload, never in the background.
+The rendered page image always goes along with the text, so diagrams and
+figures count too. The model is called only on that button — never on upload,
+never in the background.
 
 **Concept map.** Press Refresh on the map and the app reads the PDFs whose text
 has changed and extracts the durable concepts, one markdown file each. A concept
@@ -85,12 +86,13 @@ made, and unchanged PDFs are skipped for free.
 
 `.env`:
 
-| Variable          | Purpose                                                  |
-| ----------------- | -------------------------------------------------------- |
-| `STUDY_WORKSPACE` | Where your PDFs and notes live. Default `./workspace`.   |
-| `OPENAI_API_KEY`  | Needed only for the AI features.                         |
-| `OPENAI_MODEL`    | Default `gpt-5-mini`.                                    |
-| `OPENAI_BASE_URL` | Any OpenAI-compatible endpoint — a local model, a proxy. |
+| Variable              | Purpose                                                                |
+| --------------------- | ---------------------------------------------------------------------- |
+| `STUDY_WORKSPACE`     | Where your PDFs and notes live. Default `./workspace`.                 |
+| `OPENAI_API_KEY`      | Needed only for the AI features.                                       |
+| `OPENAI_MODEL`        | Default `gpt-5-mini`.                                                  |
+| `OPENAI_VISION_MODEL` | For AI page notes, which include the page image. Default `gpt-5-mini`. |
+| `OPENAI_BASE_URL`     | Any OpenAI-compatible endpoint — a local model, a proxy.               |
 
 Point `OPENAI_BASE_URL` at something like Ollama or LM Studio and no data
 leaves your machine.
