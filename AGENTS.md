@@ -124,6 +124,33 @@ with no drop shadows, and JetBrains Mono on every code surface.
 - Merge style: feature/fix/chore → develop = **squash**, develop → main = **merge commit**, hotfix → main = **squash** plus an immediate main → develop back-merge (merge commit).
 - **Releases are tagged.** After a develop → main release PR merges, tag the merge commit on main as `vX.Y.Z` (annotated, matching the `version` in `package.json` — bump it in the release when the shipped changes warrant) and push the tag: `git tag -a vX.Y.Z <merge-sha> && git push origin vX.Y.Z`. A release is not done until the tag is pushed.
 
+## Releasing
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`: verify (ci.yml's
+checks plus a guard that the tag matches `package.json`), the four-platform
+pack smoke, then `npm publish --provenance` and `gh release create`. Nothing
+else publishes, and the workflow is the only thing that should.
+
+- **A version with a hyphen goes out under the `next` dist-tag**, never
+  `latest`. That is what makes `v0.2.0-rc.0` a safe dry run — bump
+  `package.json` to the rc version, tag it, watch the workflow, then bump to
+  the real version and tag again.
+- **The proxy is not released by CI.** It is deployed by hand from
+  `proxy/README.md`, so no production key is ever handed to a workflow.
+
+Two one-time setup steps, both outside this repo and both a human's job:
+
+1. **Own `study-hack` on npm.** The name was unclaimed as of 2026-09-01; a
+   publish from an account that does not own it fails. If it gets sniped, the
+   fallback is `@study-hack/app` — which means changing `name` and `bin` in
+   `package.json` and every `npx study-hack` in the docs.
+2. **Give the workflow permission to publish.** Either configure npm Trusted
+   Publishing for the package against this repo and `release.yml` (no secret
+   at all — preferred), or add an automation-type `NPM_TOKEN` repository
+   secret. The workflow already requests `id-token: write` and passes
+   `NODE_AUTH_TOKEN`, so it works either way; drop the env line once trusted
+   publishing is on.
+
 ## Don't
 
 - ❌ Add `.js` extensions to relative imports — this is a bundler-resolved app, not tsc/NodeNext.
