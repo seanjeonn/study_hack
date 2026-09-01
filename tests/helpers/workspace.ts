@@ -18,3 +18,14 @@ export function freshWorkspace(): string {
   vi.resetModules();
   return root;
 }
+
+/**
+ * The same trick for `lib/server/config.ts`, whose CONFIG_DIR is likewise
+ * resolved at module load. Import the module under test after calling this.
+ */
+export function freshConfigDir(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "koi-config-case-"));
+  process.env.STUDY_CONFIG_DIR = dir;
+  vi.resetModules();
+  return dir;
+}

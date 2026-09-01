@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AiErrorNotice, { readAiError, type AiError } from "@/app/components/AiErrorNotice";
 import { AiNoteResponseSchema } from "@/lib/schemas";
 
 /**
@@ -10,7 +11,7 @@ import { AiNoteResponseSchema } from "@/lib/schemas";
 export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: number }) {
   const [content, setContent] = useState("");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AiError | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -38,14 +39,17 @@ export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: numb
     try {
       const res = await fetch(`/api/pdfs/${pdfId}/pages/${page}/ai-note`, { method: "POST" });
       if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `failed to generate (${res.status})`);
+        setError(await readAiError(res, `failed to generate (${res.status})`));
+        return;
       }
       // Validate the inbound payload at the boundary before trusting it.
       const parsed = AiNoteResponseSchema.parse(await res.json());
       setContent(parsed.content);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to generate an AI note");
+      setError({
+        status: 0,
+        message: err instanceof Error ? err.message : "failed to generate an AI note",
+      });
     } finally {
       setPending(false);
     }
@@ -83,7 +87,7 @@ export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: numb
         >
           {pending ? "Reading the page…" : "Generate"}
         </button>
-        {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
+        <AiErrorNotice error={error} />
       </div>
     </div>
   );

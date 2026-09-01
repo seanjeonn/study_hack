@@ -113,7 +113,18 @@ made, and unchanged PDFs are skipped for free.
 
 ## Configuration
 
-`.env`:
+**The settings page is the normal way in.** Open `/settings`, paste an API key,
+and it takes effect on the next request — no restart. It is saved to
+`~/.study-hack/config.json`, deliberately _outside_ your workspace, so a key
+never lands in a folder you sync, commit, or open in Obsidian. The key is
+write-only from the browser's side: the page can tell you one is saved and what
+kind it is, and can remove it, but never reads it back.
+
+**A key in the config file wins over `OPENAI_API_KEY` in the environment.** If
+you save a key in settings and nothing seems to change, that is the direction
+of the rule — not a bug. Clear the saved key to fall back to the environment.
+
+`.env` still works for running from source:
 
 | Variable              | Purpose                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------ |
