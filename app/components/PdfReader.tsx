@@ -38,7 +38,7 @@ export default function PdfReader({
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
       <div className="flex flex-col gap-2">
         <button
           type="button"
@@ -50,10 +50,10 @@ export default function PdfReader({
         {reportOpen ? <ExtractionReportPanel report={extraction} /> : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[3fr_2fr]">
         <PageImage pdfId={summary.id} filename={summary.filename} page={page} />
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
           <PageNoteEditor pdfId={summary.id} page={page} />
           <AiNotePanel pdfId={summary.id} page={page} />
           <PageTextPanel pdfId={summary.id} page={page} />

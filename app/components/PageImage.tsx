@@ -18,7 +18,7 @@ export default function PageImage({
   const [attempt, setAttempt] = useState(0);
 
   return (
-    <div className="relative flex min-h-[70vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4">
+    <div className="relative flex min-h-[70vh] items-center justify-center overflow-auto rounded-xl border border-[#e6e5e0] bg-white p-4 lg:min-h-0">
       {state === "loading" ? (
         <span className="absolute text-sm text-[#807d72]">Rendering page {page}…</span>
       ) : null}
@@ -44,7 +44,7 @@ export default function PageImage({
         alt={`${filename} — page ${page}`}
         onLoad={() => setState("loaded")}
         onError={() => setState("error")}
-        className="max-w-full"
+        className="max-w-full lg:max-h-full"
         style={{ opacity: state === "loaded" ? 1 : 0 }}
       />
     </div>
