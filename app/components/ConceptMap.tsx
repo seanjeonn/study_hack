@@ -12,6 +12,13 @@ import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AiErrorNotice, { readAiError, type AiError } from "@/app/components/AiErrorNotice";
+import FakeDoorDialog from "@/app/components/FakeDoorDialog";
+import {
+  fakeDoorShown,
+  markFakeDoorShown,
+  recordAttempt,
+  shouldShowFakeDoor,
+} from "@/lib/aiAttempts";
 import { subjectsOf } from "@/lib/grouping";
 import {
   ConceptGraphResponseSchema,
@@ -33,6 +40,7 @@ export default function ConceptMap() {
   // Status 0 marks a failure that never reached a route (a network drop, a
   // malformed payload); AiErrorNotice falls through to the plain message.
   const [error, setError] = useState<AiError | null>(null);
+  const [askPrice, setAskPrice] = useState(false);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -76,6 +84,11 @@ export default function ConceptMap() {
   }, []);
 
   async function refresh() {
+    // Counted before the request goes out — see AiNotePanel.
+    if (shouldShowFakeDoor(recordAttempt(), fakeDoorShown())) {
+      markFakeDoorShown();
+      setAskPrice(true);
+    }
     setRefreshing(true);
     setError(null);
     setStatus(null);
@@ -164,6 +177,8 @@ export default function ConceptMap() {
 
         <ConceptRail concept={selected} />
       </div>
+
+      {askPrice ? <FakeDoorDialog onClose={() => setAskPrice(false)} /> : null}
     </div>
   );
 }

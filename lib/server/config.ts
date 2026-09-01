@@ -61,6 +61,16 @@ export function readConfig(): AppConfig {
 }
 
 /**
+ * Writes are chained through one promise.
+ *
+ * `updateConfig` is a read-modify-write, so two concurrent callers — the
+ * telemetry module latching `installEventSent` while another send mints an
+ * `installId`, say — would both read the same file and the second would
+ * clobber the first's field. One process, one chain.
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+/**
  * Merge a patch into the config and write it atomically.
  *
  * Fields left out of the patch keep their stored value; an `apiKey` of `""`
@@ -72,18 +82,24 @@ export function readConfig(): AppConfig {
  * deliberately does not import `llm.ts` (that would be a cycle), and the
  * client's cache is keyed on the key anyway.
  */
-export async function updateConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
-  const current = readConfig();
-  const merged: AppConfig = { ...current };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) continue;
-    Reflect.set(merged, key, value);
-  }
-  if (merged.apiKey === "") delete merged.apiKey;
+export function updateConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
+  const run = writeChain.then(async () => {
+    // Read inside the chain, so the merge sees the previous write.
+    const merged: AppConfig = { ...readConfig() };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) continue;
+      Reflect.set(merged, key, value);
+    }
+    if (merged.apiKey === "") delete merged.apiKey;
 
-  // Validate what we are about to persist, not just what came in: the merge
-  // could have combined a valid patch with a stale field.
-  const next = AppConfigSchema.parse(merged);
-  await atomicWrite(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`);
-  return next;
+    // Validate what we are about to persist, not just what came in: the merge
+    // could have combined a valid patch with a stale field.
+    const next = AppConfigSchema.parse(merged);
+    await atomicWrite(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`);
+    return next;
+  });
+  // Keep the chain alive even if this link rejects, or one failed write would
+  // wedge every later one behind it.
+  writeChain = run.catch(() => undefined);
+  return run;
 }

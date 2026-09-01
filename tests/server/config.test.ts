@@ -111,3 +111,22 @@ describe("updateConfig", () => {
     expect((await fs.readdir(dir)).filter((f) => f.endsWith(".tmp"))).toEqual([]);
   });
 });
+
+describe("concurrent updates", () => {
+  it("does not let one write clobber another's field", async () => {
+    // Two read-modify-writes land at once on launch: telemetry latching
+    // installEventSent while another send mints an installId.
+    const { mod } = await withConfig(JSON.stringify({ telemetryOptIn: true }));
+    await Promise.all([
+      mod.updateConfig({ installEventSent: true }),
+      mod.updateConfig({ installId: "i-42" }),
+      mod.updateConfig({ apiKey: "sk-abc" }),
+    ]);
+    expect(mod.readConfig()).toEqual({
+      telemetryOptIn: true,
+      installEventSent: true,
+      installId: "i-42",
+      apiKey: "sk-abc",
+    });
+  });
+});

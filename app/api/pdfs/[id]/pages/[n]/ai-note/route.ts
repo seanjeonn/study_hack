@@ -2,6 +2,7 @@ import { AiNoteResponseSchema } from "@/lib/schemas";
 import { asLlmError } from "@/lib/server/llm";
 import { generateAiNote, readAiNote } from "@/lib/server/pageNote";
 import { resolvePage } from "@/lib/server/resolvePage";
+import { sendEvent } from "@/lib/server/telemetry";
 
 /** The accumulated AI notes for a page. Never calls the model. */
 export async function GET(
@@ -29,6 +30,8 @@ export async function POST(
   }
   try {
     const content = await generateAiNote(id, resolved.pageNumber);
+    // Opt-in and fire-and-forget: never awaited, so it cannot delay the note.
+    sendEvent("aiUse");
     return Response.json(AiNoteResponseSchema.parse({ pageNumber: resolved.pageNumber, content }));
   } catch (err) {
     // A missing API key surfaces as a clean 503, an exhausted beta quota as a

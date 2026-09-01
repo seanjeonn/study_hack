@@ -18,6 +18,8 @@ export const UsageEventSchema = z.object({
   /** Anonymous per-install id, or a beta token's owner if one is configured. */
   installId: z.string().min(1).max(100),
   event: z.enum(["install", "session", "aiUse"]),
+  /** Short digest of the beta token, never the token. Absent for BYO-key users. */
+  betaTokenId: z.string().max(64).optional(),
   version: z.string().max(50).optional(),
   platform: z.string().max(50).optional(),
   locale: z.string().max(20).optional(),
@@ -39,6 +41,8 @@ export type UsageEvent = z.infer<typeof UsageEventSchema>;
 export const FakeDoorSchema = z.object({
   installId: z.string().min(1).max(100).optional(),
   answer: z.enum(["yes", "no", "not_sure", "dismissed"]),
+  /** Short digest of the beta token, so an answer can be tied to a cohort. */
+  betaTokenId: z.string().max(64).optional(),
   price: z.string().max(50).optional(),
   locale: z.string().max(20).optional(),
 });

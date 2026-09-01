@@ -240,6 +240,24 @@ export const SettingsUpdateRequestSchema = z.object({
 export type SettingsUpdateRequest = z.infer<typeof SettingsUpdateRequestSchema>;
 
 /**
+ * Request body for `POST /api/feedback/fakedoor` — the pricing answer.
+ *
+ * `dismissed` is a first-class answer: closing the dialog is a real response
+ * to "would you pay", and dropping it would bias the sample toward people
+ * willing to click something.
+ *
+ * This travels regardless of the telemetry opt-in. Answering the question *is*
+ * the consent — the dialog asks one thing and sends exactly that one thing.
+ */
+export const FakeDoorAnswerSchema = z.object({
+  answer: z.enum(["yes", "no", "not_sure", "dismissed"]),
+  installId: z.string().min(1).max(100),
+  price: z.string().max(50).optional(),
+});
+
+export type FakeDoorAnswer = z.infer<typeof FakeDoorAnswerSchema>;
+
+/**
  * Response for `POST /api/concepts/refresh`. `llmCalls` is reported so the
  * cost of a refresh is visible rather than hidden.
  */

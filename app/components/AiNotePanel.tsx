@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 import AiErrorNotice, { readAiError, type AiError } from "@/app/components/AiErrorNotice";
+import FakeDoorDialog from "@/app/components/FakeDoorDialog";
+import {
+  fakeDoorShown,
+  markFakeDoorShown,
+  recordAttempt,
+  shouldShowFakeDoor,
+} from "@/lib/aiAttempts";
 import { AiNoteResponseSchema } from "@/lib/schemas";
 
 /**
@@ -12,6 +19,7 @@ export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: numb
   const [content, setContent] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<AiError | null>(null);
+  const [askPrice, setAskPrice] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -34,6 +42,12 @@ export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: numb
   }, [pdfId, page]);
 
   async function generate() {
+    // Counted before the request goes out: a press that comes back 503 for a
+    // missing key still means someone wanted this.
+    if (shouldShowFakeDoor(recordAttempt(), fakeDoorShown())) {
+      markFakeDoorShown();
+      setAskPrice(true);
+    }
     setPending(true);
     setError(null);
     try {
@@ -89,6 +103,8 @@ export default function AiNotePanel({ pdfId, page }: { pdfId: string; page: numb
         </button>
         <AiErrorNotice error={error} />
       </div>
+
+      {askPrice ? <FakeDoorDialog onClose={() => setAskPrice(false)} /> : null}
     </div>
   );
 }
