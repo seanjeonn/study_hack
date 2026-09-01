@@ -15,9 +15,29 @@ export const PdfSummarySchema = z.object({
   filename: z.string(),
   pageCount: z.number().int().positive(),
   createdAt: z.string(),
+  /** The subject this PDF is grouped under. Absent means ungrouped. */
+  subject: z.string().optional(),
 });
 
 export type PdfSummary = z.infer<typeof PdfSummarySchema>;
+
+/**
+ * A subject is free text the user types (Korean included), never a slug: it
+ * only ever travels as a query parameter, and matching is exact after a trim.
+ * The empty string is valid — it is how a PDF is put back in Ungrouped.
+ */
+export const SubjectSchema = z
+  .string()
+  .trim()
+  .max(100)
+  .regex(/^[^\r\n]*$/);
+
+/** Request body for `PUT /api/pdfs/[id]/subject` — an empty subject ungroups. */
+export const SubjectUpdateRequestSchema = z.object({
+  subject: SubjectSchema,
+});
+
+export type SubjectUpdateRequest = z.infer<typeof SubjectUpdateRequestSchema>;
 
 /** Response for `GET /api/pdfs` — every PDF in the workspace, newest first. */
 export const PdfListResponseSchema = z.object({

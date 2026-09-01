@@ -44,6 +44,7 @@ workspace/
 ├── .gitignore                  excludes .cache/ — yours to edit
 ├── deep-learning-lecture-03/
 │   ├── source.pdf              the PDF you uploaded
+│   ├── subject.md              the subject it is grouped under — yours to edit
 │   ├── notes/page-001.md       your notes — one file per page
 │   ├── ai/page-014.md          AI notes, appended as timestamped sections
 │   └── .cache/                 the app's own index — safe to delete
@@ -54,6 +55,13 @@ workspace/
 **You own everything except `.cache/`.** That folder is derived data: delete it
 and the app rebuilds it from `source.pdf` on the next request. Which also means
 you can drop a PDF into a new folder by hand and the app will pick it up.
+
+**Subjects.** A PDF can be filed under a subject — free text like `기계학습`,
+set when you upload it or from the badge in the reader header. It lives in that
+PDF's `subject.md` as one line of frontmatter, so it survives deleting the cache
+and you can set it by hand. The library and the sidebar group by it, and the
+concept map can be narrowed to a single subject. A PDF with no `subject.md` is
+simply ungrouped.
 
 Because it is all just markdown:
 

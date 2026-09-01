@@ -112,15 +112,46 @@ describe("listConcepts", () => {
   });
 });
 
-describe("buildGraph", () => {
-  const node = (slug: string, name: string, related: string[] = [], pdfs: string[] = []) =>
-    concept({
-      slug,
-      name,
-      related,
-      sources: pdfs.map((pdf) => ({ pdf, pages: [1] })),
-    });
+const node = (slug: string, name: string, related: string[] = [], pdfs: string[] = []) =>
+  concept({
+    slug,
+    name,
+    related,
+    sources: pdfs.map((pdf) => ({ pdf, pages: [1] })),
+  });
 
+describe("filterConceptsByPdfs", () => {
+  it("drops a concept none of the given PDFs mention", async () => {
+    const { filterConceptsByPdfs } = await load();
+    const filtered = filterConceptsByPdfs(
+      [node("graph", "Graph", [], ["deck"]), node("tree", "Tree", [], ["other"])],
+      new Set(["deck"]),
+    );
+    expect(filtered.map((c) => c.slug)).toEqual(["graph"]);
+  });
+
+  it("narrows a surviving concept's sources to the given PDFs", async () => {
+    const { filterConceptsByPdfs } = await load();
+    const filtered = filterConceptsByPdfs(
+      [node("graph", "Graph", [], ["deck", "other"])],
+      new Set(["deck"]),
+    );
+    expect(filtered[0].sources).toEqual([{ pdf: "deck", pages: [1] }]);
+  });
+
+  it("recomputes pdfCount and drops edges leaving the subject once built", async () => {
+    const { buildGraph, filterConceptsByPdfs } = await load();
+    const concepts = [
+      node("graph", "Graph", ["tree"], ["deck", "other"]),
+      node("tree", "Tree", ["graph"], ["other"]),
+    ];
+    const graph = buildGraph(filterConceptsByPdfs(concepts, new Set(["deck"])));
+    expect(graph.nodes).toEqual([{ slug: "graph", name: "Graph", pdfCount: 1 }]);
+    expect(graph.edges).toEqual([]);
+  });
+});
+
+describe("buildGraph", () => {
   it("normalizes a reciprocal pair into a single undirected edge", async () => {
     const { buildGraph } = await load();
     const graph = buildGraph([node("tree", "Tree", ["graph"]), node("graph", "Graph", ["tree"])]);

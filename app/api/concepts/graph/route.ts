@@ -1,8 +1,21 @@
-import { ConceptGraphResponseSchema } from "@/lib/schemas";
-import { buildGraph, listConcepts } from "@/lib/server/concepts";
+import { ConceptGraphResponseSchema, SubjectSchema } from "@/lib/schemas";
+import { buildGraph, filterConceptsByPdfs, listConcepts } from "@/lib/server/concepts";
+import { listPdfIdsWithSubject } from "@/lib/server/subjects";
 
-/** The whole concept graph. Reads files only — never calls the model. */
-export async function GET() {
-  const graph = buildGraph(await listConcepts());
-  return Response.json(ConceptGraphResponseSchema.parse(graph));
+/**
+ * The whole concept graph, or the subgraph for one subject. Reads files only —
+ * never calls the model. `?subject=` is a view filter: no subject (or an empty
+ * one) means every concept.
+ */
+export async function GET(request: Request) {
+  const raw = new URL(request.url).searchParams.get("subject") ?? "";
+  const subject = SubjectSchema.safeParse(raw);
+  if (!subject.success) return Response.json({ error: "invalid subject" }, { status: 400 });
+
+  let concepts = await listConcepts();
+  if (subject.data) {
+    const pdfIds = new Set(await listPdfIdsWithSubject(subject.data));
+    concepts = filterConceptsByPdfs(concepts, pdfIds);
+  }
+  return Response.json(ConceptGraphResponseSchema.parse(buildGraph(concepts)));
 }

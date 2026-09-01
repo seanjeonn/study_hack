@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import PdfLink from "@/app/components/PdfLink";
+import { groupPdfsBySubject } from "@/lib/grouping";
 import { PdfListResponseSchema, type PdfSummary } from "@/lib/schemas";
 
 /**
@@ -21,6 +22,9 @@ export default function AppSidebar() {
   // an effect that has to chase the route.
   const [openFor, setOpenFor] = useState<string | null>(null);
   const open = openFor === pathname;
+  const groups = groupPdfsBySubject(pdfs);
+  // Nothing is filed under a subject yet — keep the plain "PDFs" list.
+  const flat = groups.length === 1 && groups[0].subject === "";
 
   useEffect(() => {
     let active = true;
@@ -66,32 +70,60 @@ export default function AppSidebar() {
         </nav>
 
         <div className="flex min-h-0 flex-col gap-1.5">
-          <span className="px-4 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
-            PDFs
-          </span>
           {pdfs.length === 0 ? (
-            <p className="px-4 text-sm text-[#807d72]">No PDFs yet.</p>
+            <>
+              <SectionLabel>PDFs</SectionLabel>
+              <p className="px-4 text-sm text-[#807d72]">No PDFs yet.</p>
+            </>
+          ) : flat ? (
+            <>
+              <SectionLabel>PDFs</SectionLabel>
+              <div className="flex min-h-0 flex-col overflow-y-auto">
+                <PdfList pdfs={pdfs} pathname={pathname} />
+              </div>
+            </>
           ) : (
-            <ul className="flex flex-col gap-0.5 overflow-y-auto px-2">
-              {pdfs.map((pdf) => (
-                <li key={pdf.id}>
-                  <PdfLink
-                    id={pdf.id}
-                    className={`block truncate rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-                      pathname === `/pdfs/${pdf.id}`
-                        ? "bg-[#efeee8] text-[#26251e]"
-                        : "text-[#5a5852] hover:bg-[#efeee8] hover:text-[#26251e]"
-                    }`}
-                  >
-                    {pdf.filename}
-                  </PdfLink>
-                </li>
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+              {groups.map((group) => (
+                <div key={group.subject} className="flex flex-col gap-1.5">
+                  <SectionLabel>{group.subject || "Ungrouped"}</SectionLabel>
+                  <PdfList pdfs={group.pdfs} pathname={pathname} />
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </div>
     </aside>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="truncate px-4 text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+      {children}
+    </span>
+  );
+}
+
+function PdfList({ pdfs, pathname }: { pdfs: PdfSummary[]; pathname: string }) {
+  return (
+    <ul className="flex flex-col gap-0.5 px-2">
+      {pdfs.map((pdf) => (
+        <li key={pdf.id}>
+          <PdfLink
+            id={pdf.id}
+            className={`block truncate rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+              pathname === `/pdfs/${pdf.id}`
+                ? "bg-[#efeee8] text-[#26251e]"
+                : "text-[#5a5852] hover:bg-[#efeee8] hover:text-[#26251e]"
+            }`}
+          >
+            {pdf.filename}
+          </PdfLink>
+        </li>
+      ))}
+    </ul>
   );
 }
 

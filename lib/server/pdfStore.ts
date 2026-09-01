@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { pdf as pdfRender } from "pdf-to-img";
 import type { ExtractionReport, PdfSummary } from "@/lib/schemas";
 import { indexPdf, readMeta, type PdfMeta } from "@/lib/server/meta";
+import { readSubject, writeSubject } from "@/lib/server/subjects";
 import {
   claimPdfDir,
   listPdfIds,
@@ -32,12 +33,14 @@ const DOC_CACHE_LIMIT = 3;
  */
 const docCache = new Map<string, DocCacheEntry>();
 
-function toSummary(meta: PdfMeta): PdfSummary {
+function toSummary(meta: PdfMeta, subject?: string): PdfSummary {
   return {
     id: meta.id,
     filename: meta.filename,
     pageCount: meta.pageCount,
     createdAt: meta.createdAt,
+    // An ungrouped PDF simply has no subject on the wire.
+    subject: subject || undefined,
   };
 }
 
@@ -47,13 +50,15 @@ function toSummary(meta: PdfMeta): PdfSummary {
  * status machine and no progress polling. A failure leaves nothing behind: the
  * half-built directory is removed before the error propagates.
  */
-export async function addPdf(buffer: Buffer, filename: string): Promise<PdfSummary> {
+export async function addPdf(buffer: Buffer, filename: string, subject = ""): Promise<PdfSummary> {
   const id = await claimPdfDir(slugify(filename));
   try {
     await fs.writeFile(sourcePath(id), buffer);
     const meta = await indexPdf(id, buffer, filename, new Date().toISOString());
+    // Only written when the user picked one — an ungrouped PDF gets no file.
+    if (subject) await writeSubject(id, subject);
     console.info(`[extract] pdf=${id} report=${JSON.stringify(meta.extraction)}`);
-    return toSummary(meta);
+    return toSummary(meta, subject);
   } catch (err) {
     await fs.rm(pdfDir(id), { recursive: true, force: true });
     throw err;
@@ -63,24 +68,29 @@ export async function addPdf(buffer: Buffer, filename: string): Promise<PdfSumma
 /** Every PDF in the workspace, newest first. Directories with no cache are re-indexed. */
 export async function listPdfs(): Promise<PdfSummary[]> {
   const ids = await listPdfIds();
-  const metas = await Promise.all(ids.map((id) => readMeta(id)));
-  return metas
-    .filter((meta): meta is PdfMeta => meta !== undefined)
-    .map(toSummary)
+  const entries = await Promise.all(
+    ids.map(async (id) => {
+      const [meta, subject] = await Promise.all([readMeta(id), readSubject(id)]);
+      return { meta, subject };
+    }),
+  );
+  return entries
+    .filter((entry): entry is { meta: PdfMeta; subject: string | undefined } => !!entry.meta)
+    .map((entry) => toSummary(entry.meta, entry.subject))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function getPdfSummary(id: string): Promise<PdfSummary | undefined> {
-  const meta = await readMeta(id);
-  return meta ? toSummary(meta) : undefined;
+  const [meta, subject] = await Promise.all([readMeta(id), readSubject(id)]);
+  return meta ? toSummary(meta, subject) : undefined;
 }
 
 /** A PDF's summary plus its extraction-quality report, for the reader page. */
 export async function getPdfDetail(
   id: string,
 ): Promise<{ summary: PdfSummary; extraction: ExtractionReport } | undefined> {
-  const meta = await readMeta(id);
-  return meta ? { summary: toSummary(meta), extraction: meta.extraction } : undefined;
+  const [meta, subject] = await Promise.all([readMeta(id), readSubject(id)]);
+  return meta ? { summary: toSummary(meta, subject), extraction: meta.extraction } : undefined;
 }
 
 /** Extracted text for a single 1-indexed page. */

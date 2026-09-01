@@ -5,6 +5,7 @@ import {
   NoteEntryCreateRequestSchema,
   NoteEntryUpdateRequestSchema,
   PdfSummarySchema,
+  SubjectUpdateRequestSchema,
 } from "@/lib/schemas";
 
 const report = {
@@ -78,15 +79,41 @@ describe("ConceptRefreshResponseSchema", () => {
   });
 });
 
+describe("SubjectUpdateRequestSchema", () => {
+  it("trims the subject", () => {
+    const parsed = SubjectUpdateRequestSchema.safeParse({ subject: "  기계학습  " });
+    expect(parsed.success && parsed.data.subject).toBe("기계학습");
+  });
+
+  it("accepts an empty subject — that is how a PDF is ungrouped", () => {
+    expect(SubjectUpdateRequestSchema.safeParse({ subject: "" }).success).toBe(true);
+  });
+
+  it("accepts a subject at the 100 char cap and rejects one past it", () => {
+    expect(SubjectUpdateRequestSchema.safeParse({ subject: "a".repeat(100) }).success).toBe(true);
+    expect(SubjectUpdateRequestSchema.safeParse({ subject: "a".repeat(101) }).success).toBe(false);
+  });
+
+  it("rejects a subject with a newline in it", () => {
+    expect(SubjectUpdateRequestSchema.safeParse({ subject: "기계\n학습" }).success).toBe(false);
+  });
+});
+
 describe("PdfSummarySchema", () => {
+  const summary = {
+    id: "deck",
+    filename: "deck.pdf",
+    pageCount: 2,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+
   it("rejects a zero page count", () => {
-    expect(
-      PdfSummarySchema.safeParse({
-        id: "deck",
-        filename: "deck.pdf",
-        pageCount: 0,
-        createdAt: "2026-01-01T00:00:00.000Z",
-      }).success,
-    ).toBe(false);
+    expect(PdfSummarySchema.safeParse({ ...summary, pageCount: 0 }).success).toBe(false);
+  });
+
+  it("parses a summary with or without a subject", () => {
+    expect(PdfSummarySchema.safeParse(summary).success).toBe(true);
+    const parsed = PdfSummarySchema.safeParse({ ...summary, subject: "기계학습" });
+    expect(parsed.success && parsed.data.subject).toBe("기계학습");
   });
 });
