@@ -31,6 +31,7 @@ study_hack/
 ├── lib/
 │   ├── schemas.ts             zod wire schemas — client-safe, no node code
 │   └── server/                node-only: fs · pdfjs · openai
+├── tests/                     vitest suite (`pnpm test`)
 └── workspace/                 user data — gitignored, $STUDY_WORKSPACE
 ```
 
@@ -47,12 +48,13 @@ pnpm typecheck      # tsc --noEmit
 pnpm lint
 pnpm format         # prettier --write "."
 pnpm format:check
+pnpm test           # vitest run (watch mode: pnpm exec vitest)
 ```
 
 **Verification chain** — after non-trivial changes, run in this order:
 
 ```bash
-pnpm format:check && pnpm lint && pnpm typecheck && pnpm build
+pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
 If `typecheck` fails on something under `.next/types`, the route types are stale — run `pnpm build` (or delete `.next/dev`) and re-run.
@@ -113,6 +115,7 @@ with no drop shadows, and JetBrains Mono on every code surface.
 - Working branches: `<type>/<scope>-<kebab-desc>` — type ∈ `feature|fix|chore|hotfix`, scope ∈ `web|repo`.
 - PR title = Conventional Commits (e.g. `feat(web): add a health endpoint`). On squash merge it becomes the commit message verbatim, so write it carefully.
 - Merge style: feature/fix/chore → develop = **squash**, develop → main = **merge commit**, hotfix → main = **squash** plus an immediate main → develop back-merge (merge commit).
+- **Releases are tagged.** After a develop → main release PR merges, tag the merge commit on main as `vX.Y.Z` (annotated, matching the `version` in `package.json` — bump it in the release when the shipped changes warrant) and push the tag: `git tag -a vX.Y.Z <merge-sha> && git push origin vX.Y.Z`. A release is not done until the tag is pushed.
 
 ## Don't
 

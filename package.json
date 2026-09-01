@@ -1,6 +1,6 @@
 {
   "name": "study_hack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.26.1",
@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier --write \".\"",
-    "format:check": "prettier --check \".\""
+    "format:check": "prettier --check \".\"",
+    "test": "vitest run"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.5",
@@ -30,14 +31,15 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "prettier": "^3.8.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [
