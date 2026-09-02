@@ -134,9 +134,32 @@ async function serve(options) {
  */
 async function smoke() {
   const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "study-hack-smoke-"));
+  const configDir = await fsp.mkdtemp(path.join(os.tmpdir(), "study-hack-smoke-config-"));
+  // The app is behind a Google sign-in, and every API the smoke calls is
+  // gated. There is deliberately no bypass flag in the product — a way to skip
+  // the gate is a way for a user to end up skipping it — so the smoke seeds a
+  // session the same way signing in would, in a throwaway config directory.
+  // That isolation also stops the run from reading (or writing) the developer's
+  // own ~/.study-hack, which is where a real key lives.
+  await fsp.writeFile(
+    path.join(configDir, "session.json"),
+    `${JSON.stringify(
+      {
+        sub: "smoke-test",
+        email: "smoke@study-hack.invalid",
+        signedInAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
   const port = await choosePort(null, isPortFree);
   const fixture = path.join(PACKAGE_ROOT, "tests", "fixtures", "ko-sample.pdf");
-  const child = startServer(port, { STUDY_WORKSPACE: workspace, OPENAI_API_KEY: "" });
+  const child = startServer(port, {
+    STUDY_WORKSPACE: workspace,
+    STUDY_CONFIG_DIR: configDir,
+    OPENAI_API_KEY: "",
+  });
   const base = `http://127.0.0.1:${port}`;
 
   try {
@@ -183,6 +206,7 @@ async function smoke() {
   } finally {
     child.kill("SIGTERM");
     await fsp.rm(workspace, { recursive: true, force: true });
+    await fsp.rm(configDir, { recursive: true, force: true });
   }
 }
 
