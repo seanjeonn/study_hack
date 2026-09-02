@@ -11,8 +11,8 @@ below.
 
 ## What it does, and does not
 
-- **Three endpoints.** A chat-completions relay and two collection endpoints.
-  No streaming, no sessions, no accounts.
+- **Four endpoints.** A chat-completions relay, a sign-in exchange, and two
+  collection endpoints. No streaming, no sessions.
 - **No database.** Quota is one flat JSON file per calendar month; telemetry is
   append-only JSONL. Expiring a month is `rm`; the analytics stack is `jq`.
 - **The model is pinned.** Every relayed request is rewritten to `gpt-5-mini`
@@ -83,25 +83,84 @@ refused.
 }
 ```
 
+### `POST /auth/exchange` — a Google identity for a beta token
+
+`{"idToken": "…"}` in, `{"token": "sb-beta-…"}` out. This is how the app gets a
+managed token without anyone typing one: it signs the user in with Google and
+posts the resulting id_token here.
+
+The signature is checked by asking Google
+(`GET https://oauth2.googleapis.com/tokeninfo`) rather than by verifying a JWKS
+locally — one round trip on a path used a handful of times a week, against a
+key cache and a rotation policy. The **claims** are checked here, in
+`verifyClaims`, which is a pure function with unit tests.
+
+| Status | When                                                                        |
+| ------ | --------------------------------------------------------------------------- |
+| 503    | `GOOGLE_CLIENT_ID` is unset. The proxy cannot tell whose tokens are whose.  |
+| 400    | No `idToken` in the body.                                                   |
+| 401    | Not a Google id token, expired, or minted for a different `aud`.            |
+| 403    | Unverified email, an address outside `ALLOWED_EMAILS`, or the beta is full. |
+| 200    | `{ token }` — the same token every time for the same Google account.        |
+
+Issuance is keyed on Google's `sub`, not the email: an address can be renamed
+and reassigned, a `sub` cannot. Rows live in `data/accounts.json`, which the
+proxy writes and the operator only reads (or edits to set `"disabled": true`).
+
+A 401 is worth retrying after signing in again; a 403 never is. The app treats
+both the same way — it swallows the failure and signs the user in regardless,
+because reading PDFs needs no key at all.
+
 ### `GET /health`
 
-`{ ok, relayDisabled, tokens }`. No auth; nothing sensitive in it.
+`{ ok, relayDisabled, tokens, accounts }`. No auth; nothing sensitive in it.
 
 ## Configuration
 
-| Variable          | Default                     | Purpose                                     |
-| ----------------- | --------------------------- | ------------------------------------------- |
-| `PORT`            | `8787`                      | Listen port (behind Caddy).                 |
-| `OPENAI_API_KEY`  | —                           | The one real key. Required.                 |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream. Point elsewhere to test.          |
-| `TOKENS_FILE`     | `./tokens.json`             | Beta tokens.                                |
-| `DATA_DIR`        | `./data`                    | Quota files and JSONL sinks.                |
-| `RELAY_DISABLED`  | unset                       | `1` turns the relay off; `/t/*` unaffected. |
+| Variable           | Default                     | Purpose                                                      |
+| ------------------ | --------------------------- | ------------------------------------------------------------ |
+| `PORT`             | `8787`                      | Listen port (behind Caddy).                                  |
+| `OPENAI_API_KEY`   | —                           | The one real key. Required.                                  |
+| `OPENAI_BASE_URL`  | `https://api.openai.com/v1` | Upstream. Point elsewhere to test.                           |
+| `TOKENS_FILE`      | `./tokens.json`             | Beta tokens.                                                 |
+| `DATA_DIR`         | `./data`                    | Quota files and JSONL sinks.                                 |
+| `RELAY_DISABLED`   | unset                       | `1` turns the relay off; `/t/*` unaffected.                  |
+| `GOOGLE_CLIENT_ID` | —                           | The app's OAuth client id. Unset ⇒ `/auth/exchange` is 503.  |
+| `ALLOWED_EMAILS`   | —                           | Comma-separated Gmail addresses. **Empty refuses everyone.** |
+| `MAX_ACCOUNTS`     | `30`                        | Cap on issued accounts. Never refuses an existing one.       |
 
-## Runbook — issuing a token
+`GOOGLE_CLIENT_ID` must be the **same** client id the app was built with
+(`lib/server/googleClient.ts`), or every exchange fails the `aud` check.
 
-Tokens are `sb-beta-` plus 24 hex characters. The prefix is what tells them
-apart from an OpenAI key, in the app and here.
+## Runbook — admitting someone to the beta
+
+Add their Gmail address to `ALLOWED_EMAILS` and restart. Nothing else: they
+sign in with Google in the app and a token is minted on first sight.
+
+```bash
+sudoedit /etc/study-hack-proxy.env    # ALLOWED_EMAILS=a@gmail.com,b@gmail.com
+sudo systemctl restart study-hack-proxy
+curl -s localhost:8787/health          # confirm the account count
+```
+
+Removing an address stops _new_ accounts, not existing ones — their token is
+already in `data/accounts.json`. Revoke that instead:
+
+```bash
+jq '.accounts |= map(if .email == "a@gmail.com" then .disabled = true else . end)' \
+  data/accounts.json > data/accounts.json.new && mv data/accounts.json.new data/accounts.json
+sudo systemctl restart study-hack-proxy
+```
+
+Unlike `tokens.json`, `accounts.json` is not reloaded on SIGHUP — the proxy
+writes it, so it is read once at boot.
+
+## Runbook — issuing a token by hand
+
+Still the way in for someone without a Google account. Tokens are `sb-beta-`
+plus 24 hex characters; the prefix is what tells them apart from an OpenAI key,
+in the app and here. `tokens.json` is checked **before** `accounts.json`, so a
+row here can raise one person's monthly limit above the default.
 
 ```bash
 node -e 'console.log("sb-beta-" + require("crypto").randomBytes(12).toString("hex"))'

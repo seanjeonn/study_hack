@@ -28,8 +28,15 @@ export async function readAiError(res: Response, fallback: string): Promise<AiEr
 }
 
 /**
- * Renders one failed AI request. A 503 (no key) carries a link to the settings
- * page — this link is the app's entire onboarding, which is why there is no
+ * Renders one failed AI request.
+ *
+ * A 503 means no usable key, and since sign-in there are two ways to get one:
+ * the managed token that arrives with a Google account (which is missing when
+ * the proxy was unreachable at sign-in, or the account is outside the beta
+ * allowlist), or a key of the user's own. Both routes are offered, because the
+ * app cannot tell from here which one this user is on.
+ *
+ * These two links are the app's entire onboarding, which is why there is no
  * setup modal: the first dialog a user sees should be the pricing question,
  * not a wizard.
  */
@@ -40,7 +47,13 @@ export default function AiErrorNotice({ error }: { error: AiError | null }) {
   if (error.status === 503) {
     return (
       <p className="text-sm text-[#cf2d56]">
-        {strings.noKey}{" "}
+        {strings.aiNotConnected}{" "}
+        {/* A full load, not a router push: signing in again replaces the
+            session the layout was rendered from. */}
+        <a href="/login" className="underline underline-offset-2 hover:text-[#26251e]">
+          {strings.signInButton}
+        </a>
+        {" · "}
         <Link href="/settings" className="underline underline-offset-2 hover:text-[#26251e]">
           {strings.noKeyAction}
         </Link>

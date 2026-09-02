@@ -32,10 +32,19 @@ export interface Strings {
   saved: string;
   saveFailed: string;
 
+  // Sign-in
+  signInTitle: string;
+  signInBody: string;
+  signInButton: string;
+  signInWaiting: string;
+  signInUnavailable: string;
+  signedInAs: string;
+  signOut: string;
+
   // AI error states
-  noKey: string;
   noKeyAction: string;
   quotaExhausted: string;
+  aiNotConnected: string;
 
   // The pricing question
   fakeDoorTitle: string;
@@ -67,9 +76,19 @@ const en: Strings = {
   saved: "Saved.",
   saveFailed: "Could not save the settings.",
 
-  noKey: "AI features need an API key.",
+  signInTitle: "Sign in to study_hack",
+  signInBody:
+    "Your PDFs and notes stay on this computer. Google is only how the app knows which beta account you are, so the managed AI works without a key of your own.",
+  signInButton: "Sign in with Google",
+  signInWaiting: "Waiting for the browser tab you just opened…",
+  signInUnavailable:
+    "This build has no Google sign-in configured yet, so there is no way in from here. A build with the OAuth client set is on the way.",
+  signedInAs: "Signed in as",
+  signOut: "Sign out",
+
   noKeyAction: "Add one in Settings",
   quotaExhausted: "This month's free beta quota is used up. It resets on the 1st.",
+  aiNotConnected: "AI is not connected to this account.",
 
   fakeDoorTitle: "Would you pay for this?",
   fakeDoorBody:
@@ -101,9 +120,19 @@ const ko: Strings = {
   saved: "저장했습니다.",
   saveFailed: "설정을 저장하지 못했습니다.",
 
-  noKey: "AI 기능에는 API 키가 필요합니다.",
+  signInTitle: "study_hack 로그인",
+  signInBody:
+    "PDF와 노트는 이 컴퓨터에 그대로 있습니다. 구글 로그인은 어떤 베타 계정인지 확인하는 용도라서, 직접 키를 넣지 않아도 관리형 AI를 쓸 수 있습니다.",
+  signInButton: "구글로 로그인",
+  signInWaiting: "방금 열린 브라우저 탭에서 로그인을 기다리는 중…",
+  signInUnavailable:
+    "이 빌드에는 구글 로그인이 아직 설정되어 있지 않아 여기서는 들어갈 수 없습니다. OAuth 클라이언트가 설정된 빌드가 곧 나옵니다.",
+  signedInAs: "로그인 계정",
+  signOut: "로그아웃",
+
   noKeyAction: "설정에서 키 추가하기",
   quotaExhausted: "이번 달 무료 베타 사용량을 다 썼습니다. 매월 1일에 초기화됩니다.",
+  aiNotConnected: "이 계정에는 AI가 연결되어 있지 않습니다.",
 
   fakeDoorTitle: "돈을 낼 만한가요?",
   fakeDoorBody:

@@ -1,6 +1,7 @@
 import { FakeDoorAnswerSchema } from "@/lib/schemas";
 import { readConfig } from "@/lib/server/config";
 import { PROXY_BASE_URL } from "@/lib/server/llm";
+import { denyIfSignedOut } from "@/lib/server/session";
 import { betaTokenId } from "@/lib/server/telemetry";
 
 /**
@@ -19,6 +20,9 @@ import { betaTokenId } from "@/lib/server/telemetry";
 const FORWARD_TIMEOUT_MS = 3000;
 
 export async function POST(request: Request) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

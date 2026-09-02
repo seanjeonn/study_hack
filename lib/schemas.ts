@@ -270,3 +270,62 @@ export const ConceptRefreshResponseSchema = z.object({
 });
 
 export type ConceptRefreshResponse = z.infer<typeof ConceptRefreshResponseSchema>;
+
+/**
+ * The signed-in Google identity, as stored in `~/.study-hack/session.json`.
+ *
+ * Only what the UI shows and the proxy exchange needs. No tokens: the id_token
+ * is spent the moment it arrives and never written down, and there is no
+ * refresh token — a proxy outage is recovered by signing in again, which is
+ * idempotent on the proxy's side.
+ *
+ * Hand-editable like every other file the app owns, so every read `safeParse`s
+ * with "signed out" as the fallback.
+ */
+export const SessionSchema = z.object({
+  /** Google's stable account id. The proxy keys an account on this, not the email. */
+  sub: z.string().min(1),
+  email: z.string().min(1),
+  name: z.string().optional(),
+  picture: z.string().optional(),
+  signedInAt: z.string(),
+});
+
+export type Session = z.infer<typeof SessionSchema>;
+
+/**
+ * Response for `GET /api/auth/session` — what the login page polls.
+ *
+ * Deliberately narrower than the stored session: the picture URL and the
+ * Google `sub` have no business in a payload whose only job is to answer "can
+ * I navigate to the app yet".
+ */
+export const SessionResponseSchema = z.object({
+  signedIn: z.boolean(),
+  email: z.string().optional(),
+  name: z.string().optional(),
+});
+
+export type SessionResponse = z.infer<typeof SessionResponseSchema>;
+
+/**
+ * The one in-flight sign-in, as stored in `~/.study-hack/pending-auth.json`.
+ *
+ * A file rather than an in-memory Map because `next start` and the CLI are
+ * separate processes in some launch paths, and a single slot rather than a
+ * table because a person signs in once at a time — a second attempt should
+ * replace the first, not accumulate.
+ *
+ * `redirectUri` is stored rather than rebuilt: Google compares the value sent
+ * to `/authorize` against the one sent to the token endpoint byte for byte, and
+ * `localhost` versus `127.0.0.1` — or a different port on a retry — is exactly
+ * how that mismatch happens.
+ */
+export const PendingAuthSchema = z.object({
+  state: z.string().min(1),
+  verifier: z.string().min(1),
+  redirectUri: z.string().min(1),
+  createdAt: z.number(),
+});
+
+export type PendingAuth = z.infer<typeof PendingAuthSchema>;

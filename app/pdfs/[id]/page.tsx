@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import PdfReader from "@/app/components/PdfReader";
 import SubjectField from "@/app/components/SubjectField";
 import { getPdfDetail } from "@/lib/server/pdfStore";
+import { requireSession } from "@/lib/server/session";
 import { listSubjects } from "@/lib/server/subjects";
 import { isValidId } from "@/lib/server/workspace";
 
 export default async function PdfPage({ params }: PageProps<"/pdfs/[id]">) {
+  await requireSession();
   const { id } = await params;
   if (!isValidId(id)) notFound();
   const detail = await getPdfDetail(id);

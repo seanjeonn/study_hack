@@ -1,5 +1,6 @@
 import { PdfSummarySchema, SubjectUpdateRequestSchema } from "@/lib/schemas";
 import { getPdfSummary } from "@/lib/server/pdfStore";
+import { denyIfSignedOut } from "@/lib/server/session";
 import { writeSubject } from "@/lib/server/subjects";
 import { isValidId } from "@/lib/server/workspace";
 
@@ -9,6 +10,9 @@ import { isValidId } from "@/lib/server/workspace";
  * ungroups the PDF while leaving the file (and any body the user wrote in it).
  */
 export async function PUT(request: Request, ctx: RouteContext<"/api/pdfs/[id]/subject">) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id } = await ctx.params;
   if (!isValidId(id)) return Response.json({ error: "invalid pdf id" }, { status: 400 });
   // Refuse to file a subject against a directory that holds no PDF.

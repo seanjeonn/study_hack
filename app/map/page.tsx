@@ -1,6 +1,9 @@
 import ConceptMap from "@/app/components/ConceptMap";
+import { requireSession } from "@/lib/server/session";
 
-export default function MapPage() {
+export default async function MapPage() {
+  await requireSession();
+
   return (
     <main className="px-6 py-12">
       <div className="mx-auto flex max-w-6xl flex-col gap-8">

@@ -1,13 +1,15 @@
 import http from "node:http";
+import { AccountStore } from "./accounts";
+import { fetchTokenInfo, parseAllowedEmails, verifyClaims } from "./googleToken";
 import { QuotaStore } from "./quota";
 import { errorBody, MAX_BODY_BYTES, relay } from "./relay";
 import { MAX_EVENT_BYTES, TelemetryStore } from "./telemetryStore";
 import { TokenStore } from "./tokens";
 
 /**
- * The whole proxy: three endpoints on `node:http`.
+ * The whole proxy: four endpoints on `node:http`.
  *
- * No framework. There are three routes, no middleware stack, no streaming and
+ * No framework. There are four routes, no middleware stack, no streaming and
  * no sessions — a router would be more code than the routes.
  */
 
@@ -27,7 +29,24 @@ const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v
  */
 const RELAY_DISABLED = process.env.RELAY_DISABLED === "1";
 
+/** The app's Google OAuth client id. Empty turns `/auth/exchange` off entirely. */
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+
+/**
+ * Who may be issued a managed token.
+ *
+ * An allowlist rather than "anyone with a Google account", because the relay
+ * spends real money on one prepaid key and this is a beta for a known handful
+ * of people. Empty refuses everyone, which is the right default for a list
+ * whose whole purpose is to be short.
+ */
+const ALLOWED_EMAILS = parseAllowedEmails(process.env.ALLOWED_EMAILS);
+
+/** A second bound, on the count rather than the names. */
+const MAX_ACCOUNTS = Number(process.env.MAX_ACCOUNTS ?? 30);
+
 const tokens = new TokenStore(TOKENS_FILE);
+const accounts = new AccountStore(DATA_DIR);
 const quota = new QuotaStore(DATA_DIR);
 const telemetry = new TelemetryStore(DATA_DIR);
 
@@ -87,7 +106,52 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   const route = `${req.method} ${url.pathname}`;
 
   if (route === "GET /health") {
-    return send(res, 200, { ok: true, relayDisabled: RELAY_DISABLED, tokens: tokens.size });
+    return send(res, 200, {
+      ok: true,
+      relayDisabled: RELAY_DISABLED,
+      tokens: tokens.size,
+      accounts: accounts.size,
+    });
+  }
+
+  // Sign-in's server half: a Google identity in, this account's beta token
+  // out. Idempotent per Google account — the app calls it on every sign-in,
+  // including the ones that follow a proxy outage.
+  if (route === "POST /auth/exchange") {
+    if (!GOOGLE_CLIENT_ID) {
+      return send(res, 503, { error: "this proxy has no Google client configured" });
+    }
+    let body: unknown;
+    try {
+      body = await readJson(req, MAX_EVENT_BYTES);
+    } catch {
+      return send(res, 400, { error: "could not read the request body" });
+    }
+    const idToken = (body as { idToken?: unknown } | undefined)?.idToken;
+    if (typeof idToken !== "string" || idToken === "") {
+      return send(res, 400, { error: "expected an idToken" });
+    }
+
+    // Google checks the signature; we check the claims and the policy.
+    const payload = await fetchTokenInfo(idToken);
+    const claims = verifyClaims(payload, {
+      clientId: GOOGLE_CLIENT_ID,
+      allowedEmails: ALLOWED_EMAILS,
+      maxAccounts: MAX_ACCOUNTS,
+      accountCount: accounts.size,
+      isKnownAccount:
+        typeof payload === "object" && payload !== null && "sub" in payload
+          ? accounts.has(String((payload as { sub: unknown }).sub))
+          : false,
+      now: Math.floor(Date.now() / 1000),
+    });
+    if (!claims.ok) {
+      return send(res, claims.status, { error: claims.message });
+    }
+
+    const account = await accounts.getOrCreate(claims.sub, claims.email);
+    console.info(`[auth] issued to ${account.email}`);
+    return send(res, 200, { token: account.token });
   }
 
   if (route === "POST /v1/chat/completions") {
@@ -101,7 +165,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       { authorization: req.headers.authorization, body },
       {
         disabled: RELAY_DISABLED,
-        getToken: (token) => tokens.get(token),
+        // The operator's hand-issued tokens win, so a row in tokens.json can
+        // still raise one account's limit above the default.
+        getToken: (token) => tokens.get(token) ?? accounts.get(token),
         checkQuota: (token, limit) => quota.checkAndIncrement(token, limit),
         forward: forwardToOpenAI,
       },
@@ -143,9 +209,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
 tokens.loadOrThrow();
 process.on("SIGHUP", () => tokens.reload());
 
-server.listen(PORT, () => {
-  console.info(
-    `[proxy] listening on :${PORT} · data=${DATA_DIR} · relay=${RELAY_DISABLED ? "DISABLED" : "on"}`,
-  );
-  if (!OPENAI_API_KEY) console.warn("[proxy] OPENAI_API_KEY is empty — every relay will fail");
+// Listening waits on the accounts file: a request that arrived first would see
+// an empty store and mint a second token for an account that already has one.
+void accounts.load().then(() => {
+  server.listen(PORT, () => {
+    console.info(
+      `[proxy] listening on :${PORT} · data=${DATA_DIR} · relay=${RELAY_DISABLED ? "DISABLED" : "on"}`,
+    );
+    if (!OPENAI_API_KEY) console.warn("[proxy] OPENAI_API_KEY is empty — every relay will fail");
+    if (!GOOGLE_CLIENT_ID) console.warn("[proxy] GOOGLE_CLIENT_ID is empty — sign-in cannot issue");
+    else if (ALLOWED_EMAILS.length === 0) {
+      console.warn("[proxy] ALLOWED_EMAILS is empty — every sign-in will be refused");
+    }
+  });
 });
