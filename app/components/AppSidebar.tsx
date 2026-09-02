@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import PdfLink from "@/app/components/PdfLink";
+import { useLocale } from "@/app/components/useLocale";
 import { groupPdfsBySubject } from "@/lib/grouping";
+import { t } from "@/lib/i18n";
 import { PdfListResponseSchema, type PdfSummary } from "@/lib/schemas";
 
 /**
@@ -14,9 +16,13 @@ import { PdfListResponseSchema, type PdfSummary } from "@/lib/schemas";
  * because a layout does not re-render on a soft navigation — after an upload
  * pushes to the reader, the list would be stale. Refetching on every pathname
  * change keeps it honest without any extra wiring at the upload site.
+ *
+ * Rendered only when someone is signed in — the layout decides that, so `user`
+ * is never null here.
  */
-export default function AppSidebar() {
+export default function AppSidebar({ user }: { user: { email: string; name?: string } }) {
   const pathname = usePathname();
+  const strings = t(useLocale());
   const [pdfs, setPdfs] = useState<PdfSummary[]>([]);
   // The mobile panel is open for one pathname, so navigating closes it without
   // an effect that has to chase the route.
@@ -96,9 +102,41 @@ export default function AppSidebar() {
             </div>
           )}
         </div>
+
+        <div className="mt-auto flex flex-col gap-1 border-t border-[#e6e5e0] px-4 pt-3">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.88px] text-[#807d72]">
+            {strings.signedInAs}
+          </span>
+          <span className="truncate text-sm text-[#26251e]" title={user.email}>
+            {user.name || user.email}
+          </span>
+          <button
+            type="button"
+            onClick={signOut}
+            className="self-start text-sm font-medium text-[#5a5852] transition-colors hover:text-[#26251e]"
+          >
+            {strings.signOut}
+          </button>
+        </div>
       </div>
     </aside>
   );
+}
+
+/**
+ * Sign out, then reload the whole document rather than routing.
+ *
+ * The sidebar itself is rendered by the layout off the session, and a soft
+ * navigation would leave it — and the name in it — on screen after the session
+ * file is gone. A failed request still sends the browser to /login: the page
+ * gate reads the file for itself, so the worst case is one bounce back here.
+ */
+async function signOut() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login";
+  }
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

@@ -5,6 +5,7 @@ import {
 } from "@/lib/schemas";
 import { appendNoteEntry, readNoteEntries, updateNoteEntry } from "@/lib/server/notes";
 import { resolvePage } from "@/lib/server/resolvePage";
+import { denyIfSignedOut } from "@/lib/server/session";
 
 /**
  * The user's note for a single page, as its accumulated entries. Always read
@@ -12,6 +13,9 @@ import { resolvePage } from "@/lib/server/resolvePage";
  * is what the reader sees.
  */
 export async function GET(_request: Request, ctx: RouteContext<"/api/pdfs/[id]/pages/[n]/note">) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {
@@ -23,6 +27,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/pdfs/[id]/p
 
 /** Append one entry to the page's note. */
 export async function POST(request: Request, ctx: RouteContext<"/api/pdfs/[id]/pages/[n]/note">) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {
@@ -38,6 +45,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/pdfs/[id]/p
 
 /** Edit one existing entry in place, leaving the others byte-for-byte alone. */
 export async function PUT(request: Request, ctx: RouteContext<"/api/pdfs/[id]/pages/[n]/note">) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {

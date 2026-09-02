@@ -2,6 +2,7 @@ import { AiNoteResponseSchema } from "@/lib/schemas";
 import { asLlmError } from "@/lib/server/llm";
 import { generateAiNote, readAiNote } from "@/lib/server/pageNote";
 import { resolvePage } from "@/lib/server/resolvePage";
+import { denyIfSignedOut } from "@/lib/server/session";
 import { sendEvent } from "@/lib/server/telemetry";
 
 /** The accumulated AI notes for a page. Never calls the model. */
@@ -9,6 +10,9 @@ export async function GET(
   _request: Request,
   ctx: RouteContext<"/api/pdfs/[id]/pages/[n]/ai-note">,
 ) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {
@@ -23,6 +27,9 @@ export async function POST(
   _request: Request,
   ctx: RouteContext<"/api/pdfs/[id]/pages/[n]/ai-note">,
 ) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {

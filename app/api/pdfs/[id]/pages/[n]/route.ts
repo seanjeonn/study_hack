@@ -1,8 +1,12 @@
 import { renderPage } from "@/lib/server/pdfStore";
 import { resolvePage } from "@/lib/server/resolvePage";
+import { denyIfSignedOut } from "@/lib/server/session";
 
 /** A single page rendered as a PNG (n is 1-indexed). */
 export async function GET(_request: Request, ctx: RouteContext<"/api/pdfs/[id]/pages/[n]">) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const { id, n } = await ctx.params;
   const resolved = await resolvePage(id, n);
   if ("error" in resolved) {

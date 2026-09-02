@@ -1,11 +1,15 @@
 import { PdfListResponseSchema, PdfSummarySchema, SubjectSchema } from "@/lib/schemas";
 import { addPdf, listPdfs } from "@/lib/server/pdfStore";
+import { denyIfSignedOut } from "@/lib/server/session";
 import { sendSessionEvent } from "@/lib/server/telemetry";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /** Every PDF in the workspace, newest first. */
 export async function GET() {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const pdfs = await listPdfs();
   // The "app is open" signal lives here rather than on the library page: the
   // sidebar fetches this on mount and on every navigation, and unlike a page
@@ -21,6 +25,9 @@ export async function GET() {
  * fully indexed and immediately readable.
  */
 export async function POST(request: Request) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {

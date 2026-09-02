@@ -3,9 +3,11 @@ import UploadButton from "@/app/components/UploadButton";
 import { groupPdfsBySubject, subjectsOf } from "@/lib/grouping";
 import type { PdfSummary } from "@/lib/schemas";
 import { listPdfs } from "@/lib/server/pdfStore";
+import { requireSession } from "@/lib/server/session";
 import { WORKSPACE_ROOT } from "@/lib/server/workspace";
 
 export default async function LibraryPage() {
+  await requireSession();
   const pdfs = await listPdfs();
   const groups = groupPdfsBySubject(pdfs);
   // Nothing is filed under a subject yet — show the plain list, not one section

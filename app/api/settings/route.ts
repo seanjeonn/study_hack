@@ -6,6 +6,7 @@ import {
 } from "@/lib/schemas";
 import { readConfig, updateConfig } from "@/lib/server/config";
 import { resetClient } from "@/lib/server/llm";
+import { denyIfSignedOut } from "@/lib/server/session";
 
 /**
  * The masked view of the config. The key itself is never in this payload —
@@ -22,11 +23,17 @@ function maskedView(): SettingsResponse {
 }
 
 export async function GET() {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   return Response.json(SettingsResponseSchema.parse(maskedView()));
 }
 
 /** Save the settings. Fields left out of the body keep their stored value. */
 export async function PUT(request: Request) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();
