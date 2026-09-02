@@ -1,0 +1,54 @@
+"use client";
+
+import Link from "next/link";
+import { useLocale } from "@/app/components/useLocale";
+import { t } from "@/lib/i18n";
+
+/**
+ * A failed AI request, kept as a status rather than a string.
+ *
+ * The status is the whole point: both AI buttons used to throw away
+ * `res.status` and render whatever prose the server sent, which meant "no key
+ * configured" — by far the most common failure, and the only one with an
+ * obvious fix — read like a crash instead of a next step.
+ */
+export interface AiError {
+  status: number;
+  code?: string;
+  message: string;
+}
+
+/** Build an `AiError` from a failed response. Never throws. */
+export async function readAiError(res: Response, fallback: string): Promise<AiError> {
+  const payload = (await res.json().catch(() => null)) as {
+    error?: string;
+    code?: string;
+  } | null;
+  return { status: res.status, code: payload?.code, message: payload?.error ?? fallback };
+}
+
+/**
+ * Renders one failed AI request. A 503 (no key) carries a link to the settings
+ * page — this link is the app's entire onboarding, which is why there is no
+ * setup modal: the first dialog a user sees should be the pricing question,
+ * not a wizard.
+ */
+export default function AiErrorNotice({ error }: { error: AiError | null }) {
+  const strings = t(useLocale());
+  if (!error) return null;
+
+  if (error.status === 503) {
+    return (
+      <p className="text-sm text-[#cf2d56]">
+        {strings.noKey}{" "}
+        <Link href="/settings" className="underline underline-offset-2 hover:text-[#26251e]">
+          {strings.noKeyAction}
+        </Link>
+      </p>
+    );
+  }
+  if (error.status === 429) {
+    return <p className="text-sm text-[#cf2d56]">{strings.quotaExhausted}</p>;
+  }
+  return <p className="text-sm text-[#cf2d56]">{error.message}</p>;
+}

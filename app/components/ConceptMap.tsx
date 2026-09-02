@@ -11,6 +11,14 @@ import {
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import AiErrorNotice, { readAiError, type AiError } from "@/app/components/AiErrorNotice";
+import FakeDoorDialog from "@/app/components/FakeDoorDialog";
+import {
+  fakeDoorShown,
+  markFakeDoorShown,
+  recordAttempt,
+  shouldShowFakeDoor,
+} from "@/lib/aiAttempts";
 import { subjectsOf } from "@/lib/grouping";
 import {
   ConceptGraphResponseSchema,
@@ -29,7 +37,10 @@ export default function ConceptMap() {
   const [subjects, setSubjects] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Status 0 marks a failure that never reached a route (a network drop, a
+  // malformed payload); AiErrorNotice falls through to the plain message.
+  const [error, setError] = useState<AiError | null>(null);
+  const [askPrice, setAskPrice] = useState(false);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -41,7 +52,10 @@ export default function ConceptMap() {
       // Validate the inbound payload at the boundary before trusting it.
       setGraph(ConceptGraphResponseSchema.parse(await res.json()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load the graph");
+      setError({
+        status: 0,
+        message: err instanceof Error ? err.message : "failed to load the graph",
+      });
     }
   }, [subject]);
 
@@ -70,14 +84,19 @@ export default function ConceptMap() {
   }, []);
 
   async function refresh() {
+    // Counted before the request goes out — see AiNotePanel.
+    if (shouldShowFakeDoor(recordAttempt(), fakeDoorShown())) {
+      markFakeDoorShown();
+      setAskPrice(true);
+    }
     setRefreshing(true);
     setError(null);
     setStatus(null);
     try {
       const res = await fetch("/api/concepts/refresh", { method: "POST" });
       if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `refresh failed (${res.status})`);
+        setError(await readAiError(res, `refresh failed (${res.status})`));
+        return;
       }
       const result = ConceptRefreshResponseSchema.parse(await res.json());
       setStatus(
@@ -86,7 +105,7 @@ export default function ConceptMap() {
       );
       await loadGraph();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "refresh failed");
+      setError({ status: 0, message: err instanceof Error ? err.message : "refresh failed" });
     } finally {
       setRefreshing(false);
     }
@@ -98,7 +117,10 @@ export default function ConceptMap() {
       if (!res.ok) throw new Error(`failed to load the concept (${res.status})`);
       setSelected(ConceptResponseSchema.parse(await res.json()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load the concept");
+      setError({
+        status: 0,
+        message: err instanceof Error ? err.message : "failed to load the concept",
+      });
     }
   }, []);
 
@@ -134,7 +156,7 @@ export default function ConceptMap() {
           </select>
         ) : null}
         {status ? <p className="font-mono text-xs text-[#5a5852]">{status}</p> : null}
-        {error ? <p className="text-sm text-[#cf2d56]">{error}</p> : null}
+        <AiErrorNotice error={error} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
@@ -155,6 +177,8 @@ export default function ConceptMap() {
 
         <ConceptRail concept={selected} />
       </div>
+
+      {askPrice ? <FakeDoorDialog onClose={() => setAskPrice(false)} /> : null}
     </div>
   );
 }

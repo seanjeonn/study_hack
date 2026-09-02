@@ -1,0 +1,63 @@
+name: Pack smoke
+
+# Packs the tarball exactly as `npm publish` would, installs it with plain npm
+# on every platform we claim to support, and runs the CLI's self-check against
+# it. This is the check that `npx study-hack` actually works — `pnpm build` in
+# CI proves none of it, because the failures live in the gap between the repo's
+# pnpm layout and a user's npm one (a `.next` that will not boot elsewhere,
+# pdfjs cMaps gone missing, a native canvas binding that does not install).
+#
+# Called by release.yml before publishing, and runnable on its own.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pack-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-13, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # The repo builds with pnpm (prepack runs `next build --webpack`)…
+      - run: pnpm install --frozen-lockfile
+      - name: Pack the tarball
+        run: |
+          rm -rf "$RUNNER_TEMP/pack"
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --pack-destination "$RUNNER_TEMP/pack"
+          ls -l "$RUNNER_TEMP/pack"
+
+      # …and the consumer installs with plain npm, from a directory that shares
+      # nothing with the checkout. sharp's install script is skipped locally by
+      # `pnpm.ignoredBuiltDependencies`; npm runs it, so this is where it gets
+      # to fail.
+      - name: Install the tarball with plain npm
+        run: |
+          rm -rf "$RUNNER_TEMP/consumer"
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/pack/*.tgz --no-audit --no-fund
+
+      # Invoked through node rather than the .bin shim: npm writes a shell
+      # script and a .cmd on Windows, and going straight at the file skips the
+      # question of which one bash picks.
+      - name: Self-check the packaged CLI
+        run: |
+          cd "$RUNNER_TEMP/consumer"
+          node node_modules/study-hack/bin/study-hack.mjs --smoke

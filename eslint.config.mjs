@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // tsc output for the proxy package — generated CJS, never hand-edited.
+    "**/dist/**",
   ]),
 ]);
 

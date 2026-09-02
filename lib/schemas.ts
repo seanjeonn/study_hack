@@ -191,6 +191,73 @@ export const ConceptGraphResponseSchema = z.object({
 export type ConceptGraphResponse = z.infer<typeof ConceptGraphResponseSchema>;
 
 /**
+ * An API key as typed into the settings form. Trimmed because pasting one out
+ * of a dashboard picks up whitespace; whitespace *inside* is always a mistake.
+ * The empty string is valid — it is how a saved key is removed.
+ */
+export const ApiKeySchema = z.string().trim().max(500).regex(/^\S*$/);
+
+/**
+ * `~/.study-hack/config.json` — the app's own settings, deliberately outside
+ * the workspace so an API key never lands in a folder the user syncs or
+ * commits. A user can hand-edit or corrupt this file, so every read
+ * `safeParse`s with these defaults as the fallback.
+ */
+export const AppConfigSchema = z.object({
+  apiKey: z.string().optional(),
+  /** Off unless the user turned it on. Never inferred, never defaulted true. */
+  telemetryOptIn: z.boolean().default(false),
+  /** Random per-install id, minted on first use. Not tied to any identity. */
+  installId: z.string().optional(),
+  /** Latch so the one-off install event is sent at most once. */
+  installEventSent: z.boolean().default(false),
+});
+
+export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+export const KeyKindSchema = z.enum(["openai", "beta", "other"]);
+
+/**
+ * Response for `GET /api/settings` — a *masked* view. The key itself never
+ * travels back to the browser: the form can tell you a key is saved and what
+ * kind it is, and that is all it needs to render.
+ */
+export const SettingsResponseSchema = z.object({
+  hasKey: z.boolean(),
+  keyKind: KeyKindSchema.nullable(),
+  telemetryOptIn: z.boolean(),
+});
+
+export type SettingsResponse = z.infer<typeof SettingsResponseSchema>;
+
+/** Request body for `PUT /api/settings`. Omitted fields are left alone. */
+export const SettingsUpdateRequestSchema = z.object({
+  /** An empty string removes the saved key. */
+  apiKey: ApiKeySchema.optional(),
+  telemetryOptIn: z.boolean().optional(),
+});
+
+export type SettingsUpdateRequest = z.infer<typeof SettingsUpdateRequestSchema>;
+
+/**
+ * Request body for `POST /api/feedback/fakedoor` — the pricing answer.
+ *
+ * `dismissed` is a first-class answer: closing the dialog is a real response
+ * to "would you pay", and dropping it would bias the sample toward people
+ * willing to click something.
+ *
+ * This travels regardless of the telemetry opt-in. Answering the question *is*
+ * the consent — the dialog asks one thing and sends exactly that one thing.
+ */
+export const FakeDoorAnswerSchema = z.object({
+  answer: z.enum(["yes", "no", "not_sure", "dismissed"]),
+  installId: z.string().min(1).max(100),
+  price: z.string().max(50).optional(),
+});
+
+export type FakeDoorAnswer = z.infer<typeof FakeDoorAnswerSchema>;
+
+/**
  * Response for `POST /api/concepts/refresh`. `llmCalls` is reported so the
  * cost of a refresh is visible rather than hidden.
  */

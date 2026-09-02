@@ -1,7 +1,8 @@
 import { AiNoteResponseSchema } from "@/lib/schemas";
-import { LlmError } from "@/lib/server/llm";
+import { asLlmError } from "@/lib/server/llm";
 import { generateAiNote, readAiNote } from "@/lib/server/pageNote";
 import { resolvePage } from "@/lib/server/resolvePage";
+import { sendEvent } from "@/lib/server/telemetry";
 
 /** The accumulated AI notes for a page. Never calls the model. */
 export async function GET(
@@ -29,11 +30,18 @@ export async function POST(
   }
   try {
     const content = await generateAiNote(id, resolved.pageNumber);
+    // Opt-in and fire-and-forget: never awaited, so it cannot delay the note.
+    sendEvent("aiUse");
     return Response.json(AiNoteResponseSchema.parse({ pageNumber: resolved.pageNumber, content }));
   } catch (err) {
-    // A missing API key surfaces as a clean 503, not a 500.
-    if (err instanceof LlmError) {
-      return Response.json({ error: err.message }, { status: err.status });
+    // A missing API key surfaces as a clean 503, an exhausted beta quota as a
+    // 429 — neither is a 500, and neither writes anything.
+    const llmError = asLlmError(err);
+    if (llmError) {
+      return Response.json(
+        { error: llmError.message, code: llmError.code },
+        { status: llmError.status },
+      );
     }
     console.error(`[ai-note] pdf=${id} page=${resolved.pageNumber} failed:`, err);
     return Response.json({ error: "failed to generate an AI note" }, { status: 502 });

@@ -1,0 +1,114 @@
+name: Release
+
+# Publishing is tag-driven: push `vX.Y.Z` and this runs. AGENTS.md already says
+# a release is not done until the tag is pushed and that the tag must match
+# package.json — the guard below is that rule mechanized, so a mismatched tag
+# fails in thirty seconds instead of after a bad version reaches npm.
+#
+# Nothing here deploys the proxy. That stays a hand runbook (proxy/README.md):
+# one box, one service, and no production key handed to CI.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # A copy of ci.yml's checks. Deliberately duplicated rather than factored
+  # out: two consumers is not yet a pattern, and a release must not be able to
+  # break because a shared workflow moved.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: The tag must match package.json
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          # 0.2.0-rc.0 is a dry run: it must not become what `npx study-hack`
+          # resolves to. Anything with a hyphen goes out under the `next` tag.
+          case "$PKG" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      # next-env.d.ts / .next/types are gitignored and app code uses the
+      # generated RouteContext/PageProps globals — generate before tsc.
+      - run: pnpm exec next typegen
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  # The check that matters for a package nobody runs from source: pack the
+  # tarball, install it with plain npm on four platforms, and run the CLI's
+  # Korean-PDF self-check against it.
+  pack-smoke:
+    needs: verify
+    uses: ./.github/workflows/pack-smoke.yml
+
+  publish:
+    needs: [verify, pack-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # gh release create
+      id-token: write # npm provenance, and npm Trusted Publishing
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing needs a recent npm; the one bundled with Node 22 is
+      # older. With the package configured for it on npmjs.com there is no
+      # token at all — NODE_AUTH_TOKEN below is the fallback for before that is
+      # set up, and can be dropped once it is.
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      # `prepack` runs `next build --webpack`, so the tarball is built here and
+      # not carried over from another job — the artifact that ships is produced
+      # by the same command that just passed pack-smoke.
+      - name: Publish to npm
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ needs.verify.outputs.prerelease == 'true' && 'next' || 'latest' }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create the GitHub release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            ${{ needs.verify.outputs.prerelease == 'true' && '--prerelease' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}

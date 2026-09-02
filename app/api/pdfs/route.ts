@@ -1,11 +1,18 @@
 import { PdfListResponseSchema, PdfSummarySchema, SubjectSchema } from "@/lib/schemas";
 import { addPdf, listPdfs } from "@/lib/server/pdfStore";
+import { sendSessionEvent } from "@/lib/server/telemetry";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /** Every PDF in the workspace, newest first. */
 export async function GET() {
-  const payload = PdfListResponseSchema.parse({ pdfs: await listPdfs() });
+  const pdfs = await listPdfs();
+  // The "app is open" signal lives here rather than on the library page: the
+  // sidebar fetches this on mount and on every navigation, and unlike a page
+  // it is never prerendered, so it actually runs once per launch. A no-op
+  // unless the user opted in, latched twice over, and never awaited.
+  sendSessionEvent({ pdfCount: pdfs.length });
+  const payload = PdfListResponseSchema.parse({ pdfs });
   return Response.json(payload);
 }
 

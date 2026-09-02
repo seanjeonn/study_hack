@@ -31,3 +31,7 @@ workspace/
 
 # local-only tracking docs (roadmap / planning)
 docs/ROADMAP.md
+
+# proxy runtime state — beta tokens and collected events are not repo content
+proxy/data/
+proxy/tokens.json

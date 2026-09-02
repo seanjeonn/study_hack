@@ -67,6 +67,9 @@ export default function AppSidebar() {
           <NavLink href="/map" active={pathname === "/map"}>
             Concept map
           </NavLink>
+          <NavLink href="/settings" active={pathname === "/settings"}>
+            Settings
+          </NavLink>
         </nav>
 
         <div className="flex min-h-0 flex-col gap-1.5">

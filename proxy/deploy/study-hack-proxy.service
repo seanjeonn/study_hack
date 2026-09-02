@@ -1,0 +1,39 @@
+[Unit]
+Description=study-hack beta AI relay
+Documentation=https://github.com/seanjeonn/study_hack/blob/main/proxy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=studyproxy
+Group=studyproxy
+WorkingDirectory=/srv/study-hack-proxy/app
+ExecStart=/usr/bin/node dist/server.js
+# SIGHUP rereads tokens.json without dropping a request, so `systemctl reload`
+# is how a new beta token goes live.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=2
+
+Environment=NODE_ENV=production
+Environment=PORT=8787
+Environment=DATA_DIR=/srv/study-hack-proxy/data
+Environment=TOKENS_FILE=/srv/study-hack-proxy/tokens.json
+# OPENAI_API_KEY lives here, mode 600 and owned by root, so it is never in the
+# repo, the unit file, or `systemctl show` output for an unprivileged user.
+EnvironmentFile=/etc/study-hack-proxy.env
+
+# The process needs its data directory and nothing else on the box.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/study-hack-proxy/data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

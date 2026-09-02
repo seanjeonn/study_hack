@@ -8,14 +8,28 @@ Everything it produces is a plain file in a folder you choose. No database, no
 account, no cloud — open the same notes in Obsidian, track them in git, point
 Claude Code at them.
 
-## Requirements
+## Quick start
 
-- **Node 22+** (see `.nvmrc`)
-- **pnpm 10+**
+```bash
+npx study-hack
+```
 
-That's the whole list. There is no database and no Docker.
+That's it. It starts the app, opens your browser, and keeps your PDFs and notes
+in `~/study-hack`. **Node 22+** is the only requirement — no database, no
+Docker, no build step, no account.
 
-## Getting started
+```bash
+npx study-hack --workspace ~/Documents/notes   # keep your files somewhere else
+npx study-hack --port 4000                     # default: first free port from 3000
+npx study-hack --no-open                       # don't open a browser
+npx study-hack --smoke                         # self-check, then exit
+npx study-hack --help
+```
+
+`--workspace` wins over the `STUDY_WORKSPACE` environment variable. Relative
+paths resolve against the directory you ran the command from.
+
+## Running from source
 
 ```bash
 git clone <this-repo>
@@ -25,7 +39,8 @@ cp .env.example .env
 pnpm dev
 ```
 
-Open http://localhost:3000, add a PDF, and start reading.
+Open http://localhost:3000, add a PDF, and start reading. This path needs
+**pnpm 10+** as well as Node 22.
 
 Uploading blocks for a second or two while the text is extracted — that is
 deliberate. Doing it up front means there is no background job, no processing
@@ -36,8 +51,9 @@ extracted text, and your own notes — works without one.
 
 ## Where your data lives
 
-Set `STUDY_WORKSPACE` to any folder. It defaults to `./workspace`, which is
-gitignored.
+Set `--workspace` (or `STUDY_WORKSPACE`) to any folder. `npx study-hack`
+defaults to `~/study-hack`; running from source defaults to `./workspace`,
+which is gitignored.
 
 ```
 workspace/
@@ -97,15 +113,26 @@ made, and unchanged PDFs are skipped for free.
 
 ## Configuration
 
-`.env`:
+**The settings page is the normal way in.** Open `/settings`, paste an API key,
+and it takes effect on the next request — no restart. It is saved to
+`~/.study-hack/config.json`, deliberately _outside_ your workspace, so a key
+never lands in a folder you sync, commit, or open in Obsidian. The key is
+write-only from the browser's side: the page can tell you one is saved and what
+kind it is, and can remove it, but never reads it back.
 
-| Variable              | Purpose                                                                |
-| --------------------- | ---------------------------------------------------------------------- |
-| `STUDY_WORKSPACE`     | Where your PDFs and notes live. Default `./workspace`.                 |
-| `OPENAI_API_KEY`      | Needed only for the AI features.                                       |
-| `OPENAI_MODEL`        | Default `gpt-5-mini`.                                                  |
-| `OPENAI_VISION_MODEL` | For AI page notes, which include the page image. Default `gpt-5-mini`. |
-| `OPENAI_BASE_URL`     | Any OpenAI-compatible endpoint — a local model, a proxy.               |
+**A key in the config file wins over `OPENAI_API_KEY` in the environment.** If
+you save a key in settings and nothing seems to change, that is the direction
+of the rule — not a bug. Clear the saved key to fall back to the environment.
+
+`.env` still works for running from source:
+
+| Variable              | Purpose                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `STUDY_WORKSPACE`     | Where your PDFs and notes live. `./workspace` from source, `~/study-hack` under npx. |
+| `OPENAI_API_KEY`      | Needed only for the AI features.                                                     |
+| `OPENAI_MODEL`        | Default `gpt-5-mini`.                                                                |
+| `OPENAI_VISION_MODEL` | For AI page notes, which include the page image. Default `gpt-5-mini`.               |
+| `OPENAI_BASE_URL`     | Any OpenAI-compatible endpoint — a local model, a proxy.                             |
 
 Point `OPENAI_BASE_URL` at something like Ollama or LM Studio and no data
 leaves your machine.
