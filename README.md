@@ -5,8 +5,34 @@ second read when you actually want one, and get a map of the concepts your
 documents share.
 
 Everything it produces is a plain file in a folder you choose. No database, no
-account, no cloud — open the same notes in Obsidian, track them in git, point
-Claude Code at them.
+cloud storage — open the same notes in Obsidian, track them in git, point Claude
+Code at them. The app itself is behind a Google sign-in (see below); your files
+never are.
+
+## Download the desktop app
+
+Grab the installer for your machine from
+[Releases](https://github.com/seanjeonn/study_hack/releases/latest) — a `.dmg`
+for macOS (Apple Silicon and Intel builds are both there), a `.exe` installer
+for Windows. It bundles everything; you do not need Node installed.
+
+The beta builds are **not code-signed**, so both operating systems will stop you
+once. That is the signature being absent, not a warning about the app.
+
+**macOS** — drag it to Applications, then clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/study_hack.app
+```
+
+macOS attaches that flag to anything downloaded from the internet and refuses
+to open unsigned apps carrying it. Removing it is a one-time step; signing the
+builds is what will make it unnecessary.
+
+**Windows** — SmartScreen shows "Windows protected your PC". Click **More
+info**, then **Run anyway**.
+
+Prefer not to run an unsigned binary? The `npx` path below is the same app.
 
 ## Quick start
 
@@ -51,9 +77,9 @@ extracted text, and your own notes — works without one.
 
 ## Where your data lives
 
-Set `--workspace` (or `STUDY_WORKSPACE`) to any folder. `npx study-hack`
-defaults to `~/study-hack`; running from source defaults to `./workspace`,
-which is gitignored.
+Set `--workspace` (or `STUDY_WORKSPACE`) to any folder. The desktop app and
+`npx study-hack` both default to `~/study-hack`; running from source defaults
+to `./workspace`, which is gitignored.
 
 ```
 workspace/
@@ -111,6 +137,54 @@ has changed and extracts the durable concepts, one markdown file each. A concept
 appearing in several PDFs links them. The refresh reports how many LLM calls it
 made, and unchanged PDFs are skipped for free.
 
+## Signing in
+
+The app asks you to sign in with Google before it shows you anything. There is
+no password and no account to create — the button opens your system browser,
+Google sends you back, and that is the whole flow.
+
+It is used for two things and nothing else:
+
+- **A stable identity for the free AI beta.** The proxy needs to know which
+  account a request belongs to in order to count it against a monthly
+  allowance.
+- **Keeping the beta small.** Sign-in is open, but the AI allowance is issued
+  only to an allowlist of accounts while the beta runs.
+
+What is stored is a `session.json` in `~/.study-hack/` holding your Google
+subject id, email, and display name. No password, no refresh token, nothing in
+your workspace. Sign out from the sidebar and the file is deleted.
+
+This gate is a product decision, not a security boundary: the server listens on
+loopback, and anything already running on your machine could call its API
+regardless. It is there so the beta has a known shape, not to protect the files
+— those are protected by being on your disk.
+
+## AI: the free beta, or your own key
+
+**The free beta.** Sign in with an allowlisted account and the app redeems your
+Google identity with our proxy for a managed token, automatically — there is
+nothing to paste. It is good for **60 AI calls a month**. Sign in with an
+account that is not on the list and everything else still works; the AI buttons
+report that AI is not connected.
+
+**Your own key (BYOK).** Paste an OpenAI key on the settings page and it wins:
+signing in never overwrites a key you supplied yourself. This path has no
+allowlist, no quota, and no proxy in the middle. `OPENAI_BASE_URL` still points
+anywhere OpenAI-compatible, so a local model keeps everything on your machine.
+
+Either way, the model is called only when you press a button.
+
+## Telemetry
+
+Off by default, and there is no code path that turns it on for you. The toggle
+is on the settings page.
+
+Turned on, the app sends counts to the beta proxy — how many PDFs, how many
+notes, which event — under a random id. Never a note, a filename, a PDF, a
+subject, or a key. Turned off, it makes no network call, mints no id, and
+writes nothing.
+
 ## Configuration
 
 **The settings page is the normal way in.** Open `/settings`, paste an API key,
@@ -146,6 +220,15 @@ the other. The map picks up the change on the next load.
 
 Concept names that don't romanize (Korean, for instance) get a hashed filename
 like `c-69a04286e3.md`. The readable name is in the file's `name:` frontmatter.
+
+The desktop builds are unsigned, so macOS needs the `xattr` command above and
+Windows needs "More info → Run anyway". There is no auto-update either: a new
+version means downloading the new installer. No Linux build yet — `npx
+study-hack` is the Linux path.
+
+Sign-in is required even though nothing about your files needs it, and the AI
+allowlist means a signed-in account can still find AI unavailable. Both are
+beta constraints, not the shape this is meant to keep.
 
 ## Contributing
 

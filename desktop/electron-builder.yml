@@ -1,0 +1,55 @@
+appId: dev.studyhack.app
+productName: study_hack
+copyright: MIT
+
+directories:
+  output: dist
+  buildResources: build-resources
+
+# Only the shell goes in the archive. Everything the server needs is a real
+# file under extraResources below.
+files:
+  - main.js
+  - preload.js
+  - package.json
+
+# The shell itself is small, pure JS, and never read by anything but Electron,
+# so it archives fine. Keep this true: `extraResources` puts the payload at
+# `Resources/app`, and with the asar gone Electron would try to load that
+# directory as the app.
+asar: true
+
+# The installed tarball, verbatim, outside the archive. It has to be real files
+# on disk — the native canvas binding is dlopen'd, the pdfjs cMaps are read as
+# directories, and `next start` is spawned as a child process. None of that
+# works from inside an asar.
+#
+# `from` points at the payload's node_modules rather than at build/payload,
+# and that is not cosmetic: app-builder-lib's file filter drops a directory
+# whose path relative to `from` is exactly "node_modules", with no way to
+# override it (util/filter.js). Copying from one level down means the entries
+# it sees are "study-hack", "next", ... and every one of them survives.
+extraResources:
+  - from: build/payload/node_modules
+    to: app/node_modules
+    filter:
+      - "**/*"
+
+# No RunAsNode fuse is disabled anywhere in this file, and none may be: the
+# server child is spawned with `process.execPath` (the Electron binary) plus
+# ELECTRON_RUN_AS_NODE=1, which is exactly what that fuse would switch off.
+
+mac:
+  target: dmg
+  category: public.app-category.education
+  # Unsigned beta. `identity: null` stops electron-builder from picking up a
+  # stray keychain identity and producing a differently-broken artifact; users
+  # clear the quarantine flag by hand (see README.md).
+  identity: null
+
+win:
+  target: nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
