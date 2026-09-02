@@ -1,0 +1,79 @@
+name: Desktop
+
+# Builds the unsigned Electron installers: a .dmg per macOS architecture and an
+# NSIS .exe for Windows.
+#
+# The step that earns its place here is the Electron smoke. `pack-smoke.yml`
+# already proves the tarball works under plain Node; this proves it works under
+# *Electron's* Node, which is a different ABI and a different binary loading the
+# same native modules. Nothing else in CI would catch a canvas binding that
+# refuses to load there, and the failure mode in a shipped app is a window that
+# opens on a blank page.
+#
+# Called by release.yml on a tag, and runnable on its own.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # arm64
+            artifact: desktop-macos-arm64
+          - os: macos-13 # x64
+            artifact: desktop-macos-x64
+          - os: windows-latest
+            artifact: desktop-windows-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # The repo builds with pnpm — `npm pack` below runs `prepack`, which is
+      # `next build --webpack`.
+      - run: pnpm install --frozen-lockfile
+
+      # electron + electron-builder. Installed before the payload because the
+      # smoke below runs against this Electron binary — the same one
+      # electron-builder will package, so the ABI tested is the ABI shipped.
+      - name: Install the shell's own dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: desktop
+
+      # npm pack the root, then npm install the tarball into desktop/build/payload:
+      # the same pack -> consumer shape as pack-smoke.yml, in a script both this
+      # workflow and a local build call so they cannot drift.
+      - name: Build the payload
+        run: node scripts/build-payload.mjs
+        working-directory: desktop
+
+      - name: Self-check the payload under Electron's Node
+        run: |
+          ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron \
+            build/payload/node_modules/study-hack/bin/study-hack.mjs --smoke
+        working-directory: desktop
+
+      - name: Build the installer
+        run: npx electron-builder --config electron-builder.yml
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.exe
+          if-no-files-found: error

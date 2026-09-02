@@ -71,13 +71,21 @@ jobs:
     needs: verify
     uses: ./.github/workflows/pack-smoke.yml
 
-  publish:
+  # The same tarball, wrapped in an Electron shell and run once under Electron's
+  # own Node before it is packaged. Gates the release for the same reason
+  # pack-smoke does: nobody runs this from source.
+  desktop:
     needs: [verify, pack-smoke]
+    uses: ./.github/workflows/desktop.yml
+
+  publish:
+    needs: [verify, pack-smoke, desktop]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write # gh release create
       id-token: write # npm provenance, and npm Trusted Publishing
+      actions: read # download the desktop job's artifacts
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -104,11 +112,21 @@ jobs:
           DIST_TAG: ${{ needs.verify.outputs.prerelease == 'true' && 'next' || 'latest' }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # The installers built by the desktop job. They are attached to the
+      # release rather than published anywhere else: README.md points users at
+      # GitHub Releases for the download.
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: desktop-*
+          path: installers
+          merge-multiple: true
+
       - name: Create the GitHub release
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            ${{ needs.verify.outputs.prerelease == 'true' && '--prerelease' || '' }}
+            ${{ needs.verify.outputs.prerelease == 'true' && '--prerelease' || '' }} \
+            installers/*
         env:
           GH_TOKEN: ${{ github.token }}
