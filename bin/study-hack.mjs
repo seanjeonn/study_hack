@@ -2,84 +2,28 @@
 /**
  * The `npx study-hack` entry point.
  *
- * The whole trick of this file is one `process.chdir(packageRoot)`. The app is
- * shipped with a prebuilt `.next`, and two things in it resolve against the
- * process cwd: `next start` looks for `.next` there, and
- * `lib/server/textExtract.ts` anchors its pdfjs `createRequire` there to find
- * the cMap assets Korean text extraction needs. Running from the package root
- * satisfies both at once, with no code change in either.
+ * Argument parsing lives in `./cliArgs.mjs` and the server child in
+ * `./server.mjs` — the latter because the Electron shell in `desktop/` starts
+ * the very same server and must not carry a second copy of the rules about
+ * cwd and the child environment. What is left here is the CLI itself: parse,
+ * pick a workspace, start, print, and the release self-check.
  *
- * Which is why the workspace path is made absolute *before* the chdir — after
- * it, a relative `--workspace` would point somewhere the user never meant.
- *
- * Plain Node ESM: `bin/` ships to npm untouched, so `import.meta.url` here is a
- * real file URL (unlike inside the bundled app, where Turbopack rewrites it).
+ * Plain Node ESM: `bin/` ships to npm untouched, so `import.meta.url` there is
+ * a real file URL (unlike inside the bundled app, where Turbopack rewrites it).
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import net from "node:net";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { choosePort, CliError, HELP, parseArgs, resolveWorkspace } from "./cliArgs.mjs";
-
-const PACKAGE_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const require = createRequire(path.join(PACKAGE_ROOT, "package.json"));
+import { isPortFree, PACKAGE_ROOT, startServer, waitForServer } from "./server.mjs";
 
 /** Korean text the smoke fixture must round-trip through extraction. */
 const SMOKE_EXPECTED = ["안녕하세요", "한국어", "기계학습"];
 
 function readVersion() {
   return JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")).version;
-}
-
-/** True when nothing else holds the port on the loopback interface. */
-function isPortFree(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once("error", () => resolve(false));
-    server.once("listening", () => server.close(() => resolve(true)));
-    server.listen(port, "127.0.0.1");
-  });
-}
-
-/**
- * Start the packaged Next server from the package root.
- *
- * `next` is spawned through its own JS entry point rather than a shell-resolved
- * `next` binary: the .bin shim is a symlink on POSIX and a .cmd on Windows, and
- * going straight to the file sidesteps both.
- */
-function startServer(port, env) {
-  const nextRoot = path.dirname(require.resolve("next/package.json"));
-  const child = spawn(process.execPath, [path.join(nextRoot, "dist", "bin", "next"), "start"], {
-    cwd: PACKAGE_ROOT,
-    env: { ...process.env, ...env, PORT: String(port) },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  return child;
-}
-
-/** Poll the server until it answers, so the browser never opens on a dead port. */
-async function waitForServer(port, child, timeoutMs = 60_000) {
-  const deadline = Date.now() + timeoutMs;
-  let exited = false;
-  child.once("exit", () => {
-    exited = true;
-  });
-  while (Date.now() < deadline) {
-    if (exited) throw new Error("the server exited before it started listening");
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/`, { redirect: "manual" });
-      if (res.status < 500) return;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  throw new Error(`the server did not start within ${Math.round(timeoutMs / 1000)}s`);
 }
 
 function openBrowser(url) {
